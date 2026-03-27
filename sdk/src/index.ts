@@ -5,9 +5,32 @@ import { TokenClient } from './tokenClient';
 import { DividendClient } from './dividendClient';
 import { MarketClient } from './marketClient';
 import { ComplianceClient } from './complianceClient';
+import { CustodyClient } from './custody';
+import { CustodyMonitoring } from './custodyMonitoring';
 
 // Type exports
 export * from './types';
+
+// Custody-related exports
+export {
+    CustodyClient,
+    CustodyMonitoring,
+    type CustodyAttestation,
+    type CustodianRegistry,
+    type DisputeRecord,
+    type VerificationTypeConfig,
+    type InsuranceIntegration,
+    type CustodianProfile,
+    type ProofData
+} from './custody';
+
+export {
+    type CustodyAlert,
+    type CustodianMetrics,
+    type AssetDepreciationData,
+    type InsuranceStatus,
+    type MonitoringConfig
+} from './custodyMonitoring';
 
 // Error exports - avoid re-exporting RWASDKError since it's already exported from types
 export * from './errors';
@@ -21,6 +44,7 @@ export class StellarRWASDK {
   public complianceClient: ComplianceClient;
   public dividendClient: DividendClient;
   public marketClient: MarketClient;
+  public custodyClient: CustodyClient;
 
   constructor(config: RWASDKConfig) {
     this.config = config;
@@ -30,6 +54,11 @@ export class StellarRWASDK {
     this.complianceClient = new ComplianceClient(config);
     this.dividendClient = new DividendClient(config);
     this.marketClient = new MarketClient(config);
+    this.custodyClient = new CustodyClient(
+      config.contracts.custodyValidator,
+      config.stellar.serverUrl,
+      config.stellar.passphrase
+    );
   }
 
   /**
@@ -57,6 +86,11 @@ export class StellarRWASDK {
     this.complianceClient = new ComplianceClient(this.config);
     this.dividendClient = new DividendClient(this.config);
     this.marketClient = new MarketClient(this.config);
+    this.custodyClient = new CustodyClient(
+      this.config.contracts.custodyValidator,
+      this.config.stellar.serverUrl,
+      this.config.stellar.passphrase
+    );
   }
 
   /**
