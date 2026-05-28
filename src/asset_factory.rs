@@ -6,6 +6,8 @@ use crate::auth::assert_admin;
 use crate::rwa_token::RWATokenClient;
 use crate::RwaDeploySpec;
 
+const STORAGE_VERSION: u32 = 1;
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum AssetFactoryError {
@@ -117,7 +119,47 @@ impl AssetFactory {
             .set(&Symbol::new(&env, "registry"), &Map::<Symbol, AssetInfo>::new(&env));
         env.storage()
             .instance()
+            .set(&Symbol::new(&env, "version"), &STORAGE_VERSION);
+        env.storage()
+            .instance()
             .set(&Symbol::new(&env, "governance_threshold"), &6600u32); // 66% in basis points
+    }
+
+    fn read_version(env: &Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(env, "version"))
+            .unwrap_or(0)
+    }
+
+    fn check_version(env: &Env) {
+        if Self::read_version(env) < STORAGE_VERSION {
+            panic!("Contract storage is outdated. Call migrate().");
+        }
+    }
+
+    pub fn migrate(env: Env, auth: Address) {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, "admin"))
+            .unwrap_or_else(|| panic!("Factory not initialized"));
+
+        assert_admin(&auth, &admin);
+
+        let ver = Self::read_version(&env);
+        if ver >= STORAGE_VERSION {
+            panic!("Already at latest version");
+        }
+
+        let mut current = ver;
+        while current < STORAGE_VERSION {
+            current += 1;
+        }
+
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "version"), &STORAGE_VERSION);
     }
 
     /// Create a new RWA asset with deterministic address deployment
@@ -129,6 +171,8 @@ impl AssetFactory {
             .unwrap_or_else(|| panic!("Factory not initialized"));
 
         assert_admin(&auth, &admin);
+
+        Self::check_version(&env);
 
         // Validate parameters
         if config.total_supply <= 0 || config.decimals > 18 {
@@ -242,6 +286,8 @@ impl AssetFactory {
 
         assert_admin(&auth, &admin);
 
+        Self::check_version(&env);
+
         let token_client = RWATokenClient::new(&env, &spec.token_contract);
         token_client.initialize(
             &auth,
@@ -321,6 +367,8 @@ impl AssetFactory {
 
         assert_admin(&auth, &admin);
 
+        Self::check_version(&env);
+
         let asset_key = Symbol::new(&env, &symbol.to_string());
         let mut asset_info: AssetInfo = env
             .storage()
@@ -341,6 +389,8 @@ impl AssetFactory {
 
         assert_admin(&auth, &admin);
 
+        Self::check_version(&env);
+
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "admin"), &new_admin);
@@ -355,6 +405,8 @@ impl AssetFactory {
             .unwrap_or_else(|| panic!("Factory not initialized"));
 
         assert_admin(&auth, &admin);
+
+        Self::check_version(&env);
 
         let mut templates: Map<AssetClass, AssetTemplate> = env
             .storage()
@@ -387,6 +439,8 @@ impl AssetFactory {
             .unwrap_or_else(|| panic!("Factory not initialized"));
 
         assert_admin(&auth, &admin);
+
+        Self::check_version(&env);
 
         let registry: Map<Symbol, AssetInfo> = env
             .storage()
@@ -438,6 +492,8 @@ impl AssetFactory {
             .unwrap_or_else(|| panic!("Factory not initialized"));
 
         assert_admin(&auth, &admin);
+
+        Self::check_version(&env);
 
         let registry: Map<Symbol, AssetInfo> = env
             .storage()
