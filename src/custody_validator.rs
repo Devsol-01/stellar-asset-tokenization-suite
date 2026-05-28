@@ -1,5 +1,5 @@
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, Map, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, Address, BytesN, Env, Map, Symbol, Vec,
 };
 
 use crate::auth::assert_admin;
@@ -27,6 +27,11 @@ pub enum CustodyError {
     InvalidMerkleProof = 18,
     ZKVerificationFailed = 19,
     InsuranceClaimFailed = 20,
+    AlreadyInitialized = 21,
+    NotInitialized = 22,
+    AttestationNotFound = 23,
+    OracleNotFound = 24,
+    ConfigNotFound = 25,
 }
 
 #[contracttype]
@@ -218,7 +223,7 @@ impl CustodyValidator {
             .instance()
             .has(&Symbol::new(&env, "initialized"))
         {
-            panic!("Validator already initialized");
+            panic_with_error!(&env, CustodyError::AlreadyInitialized);
         }
 
         let mut req_methods = Vec::<Symbol>::new(&env);
@@ -309,9 +314,9 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         Self::put_oracle(env, oracle_address, name, jurisdiction);
     }
@@ -331,9 +336,9 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         let custodian = CustodianRegistry {
             custodian_address: custodian_address.clone(),
@@ -367,9 +372,9 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         let mut verification_configs: Map<Symbol, VerificationTypeConfig> = env
             .storage()
@@ -497,9 +502,9 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         let mut disputes: Map<u64, DisputeRecord> = env
             .storage()
@@ -512,7 +517,7 @@ impl CustodyValidator {
             .unwrap();
 
         if dispute.status != Symbol::new(&env, "pending") {
-            panic!("Dispute not in pending status");
+            panic_with_error!(&env, CustodyError::InvalidDisputeStatus);
         }
 
         dispute.status = if resolution == Symbol::new(&env, "upheld") {
@@ -596,7 +601,7 @@ impl CustodyValidator {
 
     pub fn submit_attestation(env: Env, attestation: CustodyAttestation) -> u64 {
         if !Self::verify_attestation(env.clone(), attestation.clone()) {
-            panic!("Invalid attestation");
+            panic_with_error!(&env, CustodyError::VerificationFailed);
         }
 
         let attestation_count: u64 = env
@@ -712,7 +717,7 @@ impl CustodyValidator {
             .unwrap();
 
         if bond_amount < custodian_info.bond_required {
-            panic!("Insufficient bond amount");
+            panic_with_error!(&env, CustodyError::InsufficientBond);
         }
 
         let disputes: Map<u64, DisputeRecord> = env
@@ -724,7 +729,7 @@ impl CustodyValidator {
         for dispute in disputes.iter() {
             if dispute.1.attestation_id == attestation_id 
                 && dispute.1.status == Symbol::new(&env, "pending") {
-                panic!("Dispute already exists");
+                panic_with_error!(&env, CustodyError::DisputeAlreadyExists);
             }
         }
 
@@ -778,7 +783,7 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "config"))
-            .unwrap_or_else(|| panic!("Config not found"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::ConfigNotFound); });
 
         let registered_assets: Map<Address, AssetRegistration> = env
             .storage()
@@ -839,7 +844,7 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "config"))
-            .unwrap_or_else(|| panic!("Config not found"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::ConfigNotFound); });
 
         let valid_signatures = proof.oracle_signatures.len();
         let total_signatures = proof.oracle_signatures.len();
@@ -881,7 +886,7 @@ impl CustodyValidator {
 
         attestations
             .get(attestation_id)
-            .unwrap_or_else(|| panic!("Attestation not found"))
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::AttestationNotFound); })
     }
 
     pub fn get_latest_attestation(env: Env, asset_id: Address) -> Option<CustodyAttestation> {
@@ -916,7 +921,7 @@ impl CustodyValidator {
 
         disputes
             .get(dispute_id)
-            .unwrap_or_else(|| panic!("Dispute not found"))
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::DisputeNotFound); })
     }
 
     pub fn get_custodian_info(env: Env, custodian_address: Address) -> CustodianRegistry {
@@ -928,7 +933,7 @@ impl CustodyValidator {
 
         custodians
             .get(custodian_address)
-            .unwrap_or_else(|| panic!("Custodian not found"))
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::CustodianNotWhitelisted); })
     }
 
     pub fn list_active_custodians(env: Env) -> Vec<CustodianRegistry> {
@@ -957,7 +962,7 @@ impl CustodyValidator {
 
         verification_configs
             .get(verification_type)
-            .unwrap_or_else(|| panic!("Verification type not found"))
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::InvalidVerificationType); })
     }
 
     pub fn trigger_insurance_claim(
@@ -971,9 +976,9 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         let insurance_integrations: Map<Address, InsuranceIntegration> = env
             .storage()
@@ -983,11 +988,11 @@ impl CustodyValidator {
 
         if let Some(insurance) = insurance_integrations.get(asset_id.clone()) {
             if !insurance.claim_auto_trigger {
-                panic!("Auto-claim not enabled for this asset");
+                panic_with_error!(&env, CustodyError::InsuranceClaimFailed);
             }
 
             if env.ledger().timestamp() > insurance.valid_until {
-                panic!("Insurance policy expired");
+                panic_with_error!(&env, CustodyError::InsuranceClaimFailed);
             }
 
             env.events().publish(
@@ -998,7 +1003,7 @@ impl CustodyValidator {
                 (insurance.provider, claim_reason, evidence_hash),
             );
         } else {
-            panic!("No insurance integration found for asset");
+            panic_with_error!(&env, CustodyError::InsuranceClaimFailed);
         }
     }
 
@@ -1012,9 +1017,9 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         let mut insurance_integrations: Map<Address, InsuranceIntegration> = env
             .storage()
@@ -1060,7 +1065,7 @@ impl CustodyValidator {
 
         oracles
             .get(oracle_address)
-            .unwrap_or_else(|| panic!("Oracle not found"))
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::OracleNotFound); })
     }
 
     pub fn list_active_oracles(env: Env) -> Vec<OracleInfo> {
@@ -1085,9 +1090,9 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         let mut oracles: Map<Address, OracleInfo> = env
             .storage()
@@ -1114,12 +1119,12 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         if reputation_score > 100 {
-            panic!("Invalid reputation score");
+            panic_with_error!(&env, CustodyError::VerificationFailed);
         }
 
         let mut oracles: Map<Address, OracleInfo> = env
@@ -1146,7 +1151,7 @@ impl CustodyValidator {
 
         registered_assets
             .get(asset_address)
-            .unwrap_or_else(|| panic!("Asset not registered"))
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::AssetNotRegistered); })
     }
 
     pub fn update_config(env: Env, auth: Address, config: ValidationConfig) {
@@ -1154,9 +1159,9 @@ impl CustodyValidator {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, CustodyError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         env.storage()
             .instance()
