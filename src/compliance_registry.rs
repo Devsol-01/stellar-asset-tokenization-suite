@@ -1,5 +1,5 @@
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, Address, Env, Map, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, panic_with_error, Address, Env, Map, Symbol, Vec,
 };
 
 use crate::auth::assert_admin;
@@ -16,6 +16,8 @@ pub enum ComplianceError {
     InvalidJurisdiction = 5,
     AccreditationRequired = 6,
     TransferLimitExceeded = 7,
+    AlreadyInitialized = 8,
+    NotInitialized = 9,
 }
 
 #[contracttype]
@@ -75,7 +77,7 @@ impl ComplianceRegistry {
             .instance()
             .has(&Symbol::new(&env, "initialized"))
         {
-            panic!("Registry already initialized");
+            panic_with_error!(&env, ComplianceError::AlreadyInitialized);
         }
 
         env.storage()
@@ -198,9 +200,9 @@ impl ComplianceRegistry {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, ComplianceError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         Self::check_version(&env);
 
@@ -229,9 +231,9 @@ impl ComplianceRegistry {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, ComplianceError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         Self::check_version(&env);
 
@@ -255,9 +257,9 @@ impl ComplianceRegistry {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, ComplianceError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         Self::check_version(&env);
 
@@ -293,9 +295,9 @@ impl ComplianceRegistry {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, ComplianceError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         Self::check_version(&env);
 
@@ -321,9 +323,9 @@ impl ComplianceRegistry {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, ComplianceError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         Self::check_version(&env);
 
@@ -584,9 +586,9 @@ impl ComplianceRegistry {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, ComplianceError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         Self::check_version(&env);
 
@@ -612,9 +614,9 @@ impl ComplianceRegistry {
             .storage()
             .instance()
             .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
+            .unwrap_or_else(|| { panic_with_error!(&env, ComplianceError::NotInitialized); });
 
-        assert_admin(&auth, &admin);
+        assert_admin(&env, &auth, &admin);
 
         Self::check_version(&env);
 
