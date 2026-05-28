@@ -3,7 +3,6 @@ use soroban_sdk::{
     Symbol, Vec,
 };
 
-use crate::auth::assert_admin;
 use crate::rwa_token::RWATokenClient;
 
 #[contracterror]
@@ -119,13 +118,7 @@ impl DividendDistributor {
         currency: Symbol,
         token_address: Address,
     ) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Distributor not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut map: Map<Symbol, Address> = env
             .storage()
@@ -181,13 +174,7 @@ impl DividendDistributor {
         claim_deadline: u64,
         metadata: Map<Symbol, Symbol>,
     ) -> Vec<u64> {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Distributor not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let config: DividendConfig = env
             .storage()
@@ -240,13 +227,7 @@ impl DividendDistributor {
             panic!("Invalid amount");
         }
 
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Distributor not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let config: DividendConfig = env
             .storage()
@@ -560,13 +541,7 @@ impl DividendDistributor {
     }
 
     pub fn update_config(env: Env, auth: Address, config: DividendConfig) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Distributor not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         env.storage()
             .instance()
@@ -574,13 +549,7 @@ impl DividendDistributor {
     }
 
     pub fn deactivate_distribution(env: Env, auth: Address, distribution_id: u64) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Distributor not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let distributions: Vec<DividendDistribution> = env
             .storage()

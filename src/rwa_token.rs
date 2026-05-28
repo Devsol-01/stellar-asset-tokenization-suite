@@ -2,7 +2,6 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, Address, Env, Map, Symbol, Vec,
 };
 
-use crate::auth::assert_admin;
 use crate::compliance_registry::ComplianceRegistryClient;
 
 #[contracterror]
@@ -125,13 +124,7 @@ impl RWAToken {
             panic!("Invalid amount");
         }
 
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Token not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut token_info: TokenInfo = env
             .storage()
@@ -304,13 +297,7 @@ impl RWAToken {
     }
 
     pub fn pause(env: Env, auth: Address) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Token not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut token_info: TokenInfo = env
             .storage()
@@ -325,13 +312,7 @@ impl RWAToken {
     }
 
     pub fn unpause(env: Env, auth: Address) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Token not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut token_info: TokenInfo = env
             .storage()
@@ -346,13 +327,7 @@ impl RWAToken {
     }
 
     pub fn freeze(env: Env, auth: Address) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Token not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut token_info: TokenInfo = env
             .storage()
@@ -367,13 +342,7 @@ impl RWAToken {
     }
 
     pub fn unfreeze(env: Env, auth: Address) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Token not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut token_info: TokenInfo = env
             .storage()

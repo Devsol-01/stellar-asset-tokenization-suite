@@ -2,8 +2,6 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, Map, Symbol, Vec,
 };
 
-use crate::auth::assert_admin;
-
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum CustodyError {
@@ -221,7 +219,21 @@ impl CustodyValidator {
             panic!("Validator already initialized");
         }
 
-        let mut req_methods = Vec::<Symbol>::new(&env);
+        Self::init_config(&env, &admin);
+        Self::init_storage_collections(&env);
+        Self::init_default_oracles(&env, &oracle_addresses);
+
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "initialized"), &true);
+    }
+
+    fn init_config(env: &Env, admin: &Address) {
+        env.storage()
+            .instance()
+            .set(&Symbol::new(env, "admin"), admin);
+
+        let mut req_methods = Vec::<Symbol>::new(env);
         req_methods.push_back(Symbol::new(&env, "physical_inspection"));
         req_methods.push_back(Symbol::new(&env, "document_verification"));
         req_methods.push_back(Symbol::new(&env, "blockchain_audit"));
@@ -287,7 +299,9 @@ impl CustodyValidator {
             &Symbol::new(&env, "insurance_integrations"),
             &Map::<Address, InsuranceIntegration>::new(&env),
         );
+    }
 
+    fn init_default_oracles(env: &Env, oracle_addresses: &Vec<Address>) {
         for oracle_addr in oracle_addresses.iter() {
             Self::put_oracle(
                 env.clone(),
@@ -305,13 +319,7 @@ impl CustodyValidator {
         name: Symbol,
         jurisdiction: Symbol,
     ) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         Self::put_oracle(env, oracle_address, name, jurisdiction);
     }
@@ -327,13 +335,7 @@ impl CustodyValidator {
         bond_required: i128,
         insurance_provider: Symbol,
     ) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let custodian = CustodianRegistry {
             custodian_address: custodian_address.clone(),
@@ -363,13 +365,7 @@ impl CustodyValidator {
     }
 
     pub fn setup_verification_types(env: Env, auth: Address) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut verification_configs: Map<Symbol, VerificationTypeConfig> = env
             .storage()
@@ -377,14 +373,25 @@ impl CustodyValidator {
             .get(&Symbol::new(&env, "verification_configs"))
             .unwrap_or(Map::new(&env));
 
-        // Real Estate verification config
-        let mut real_estate_docs = Vec::<Symbol>::new(&env);
+        verification_configs.set(Symbol::new(&env, "real_estate"), Self::get_real_estate_config(&env));
+        verification_configs.set(Symbol::new(&env, "precious_metals"), Self::get_metals_config(&env));
+        verification_configs.set(Symbol::new(&env, "art_collectibles"), Self::get_art_config(&env));
+        verification_configs.set(Symbol::new(&env, "commodities"), Self::get_commodities_config(&env));
+        verification_configs.set(Symbol::new(&env, "invoice"), Self::get_invoice_config(&env));
+
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "verification_configs"), &verification_configs);
+    }
+
+    fn get_real_estate_config(env: &Env) -> VerificationTypeConfig {
+        let mut real_estate_docs = Vec::<Symbol>::new(env);
         real_estate_docs.push_back(Symbol::new(&env, "property_deed"));
         real_estate_docs.push_back(Symbol::new(&env, "title_insurance"));
         real_estate_docs.push_back(Symbol::new(&env, "rental_income_proof"));
         real_estate_docs.push_back(Symbol::new(&env, "inspection_report"));
 
-        let real_estate_config = VerificationTypeConfig {
+        VerificationTypeConfig {
             verification_type: Symbol::new(&env, "real_estate"),
             required_documents: real_estate_docs,
             verification_frequency: 86400 * 7, // weekly
@@ -395,16 +402,17 @@ impl CustodyValidator {
             iot_monitoring_required: false,
             satellite_verification: true,
             legal_verification_required: true,
-        };
+        }
+    }
 
-        // Precious Metals verification config
-        let mut metals_docs = Vec::<Symbol>::new(&env);
+    fn get_metals_config(env: &Env) -> VerificationTypeConfig {
+        let mut metals_docs = Vec::<Symbol>::new(env);
         metals_docs.push_back(Symbol::new(&env, "vault_audit_cert"));
         metals_docs.push_back(Symbol::new(&env, "purity_assay"));
         metals_docs.push_back(Symbol::new(&env, "weight_verification"));
         metals_docs.push_back(Symbol::new(&env, "chain_of_custody"));
 
-        let metals_config = VerificationTypeConfig {
+        VerificationTypeConfig {
             verification_type: Symbol::new(&env, "precious_metals"),
             required_documents: metals_docs,
             verification_frequency: 86400, // daily
@@ -415,16 +423,17 @@ impl CustodyValidator {
             iot_monitoring_required: true,
             satellite_verification: false,
             legal_verification_required: false,
-        };
+        }
+    }
 
-        // Art/Collectibles verification config
-        let mut art_docs = Vec::<Symbol>::new(&env);
+    fn get_art_config(env: &Env) -> VerificationTypeConfig {
+        let mut art_docs = Vec::<Symbol>::new(env);
         art_docs.push_back(Symbol::new(&env, "provenance_docs"));
         art_docs.push_back(Symbol::new(&env, "condition_report"));
         art_docs.push_back(Symbol::new(&env, "insurance_appraisal"));
         art_docs.push_back(Symbol::new(&env, "exhibition_history"));
 
-        let art_config = VerificationTypeConfig {
+        VerificationTypeConfig {
             verification_type: Symbol::new(&env, "art_collectibles"),
             required_documents: art_docs,
             verification_frequency: 86400 * 30, // monthly
@@ -435,15 +444,16 @@ impl CustodyValidator {
             iot_monitoring_required: false,
             satellite_verification: false,
             legal_verification_required: true,
-        };
+        }
+    }
 
-        // Commodities verification config
-        let mut commodities_docs = Vec::<Symbol>::new(&env);
+    fn get_commodities_config(env: &Env) -> VerificationTypeConfig {
+        let mut commodities_docs = Vec::<Symbol>::new(env);
         commodities_docs.push_back(Symbol::new(&env, "warehouse_receipt"));
         commodities_docs.push_back(Symbol::new(&env, "quality_grading"));
         commodities_docs.push_back(Symbol::new(&env, "environmental_cert"));
 
-        let commodities_config = VerificationTypeConfig {
+        VerificationTypeConfig {
             verification_type: Symbol::new(&env, "commodities"),
             required_documents: commodities_docs,
             verification_frequency: 86400 * 3, // every 3 days
@@ -454,15 +464,16 @@ impl CustodyValidator {
             iot_monitoring_required: true,
             satellite_verification: false,
             legal_verification_required: false,
-        };
+        }
+    }
 
-        // Invoice verification config
-        let mut invoice_docs = Vec::<Symbol>::new(&env);
+    fn get_invoice_config(env: &Env) -> VerificationTypeConfig {
+        let mut invoice_docs = Vec::<Symbol>::new(env);
         invoice_docs.push_back(Symbol::new(&env, "debtor_confirmation"));
         invoice_docs.push_back(Symbol::new(&env, "payment_history"));
         invoice_docs.push_back(Symbol::new(&env, "credit_insurance"));
 
-        let invoice_config = VerificationTypeConfig {
+        VerificationTypeConfig {
             verification_type: Symbol::new(&env, "invoice"),
             required_documents: invoice_docs,
             verification_frequency: 86400 * 14, // biweekly
@@ -473,17 +484,7 @@ impl CustodyValidator {
             iot_monitoring_required: false,
             satellite_verification: false,
             legal_verification_required: true,
-        };
-
-        verification_configs.set(Symbol::new(&env, "real_estate"), real_estate_config);
-        verification_configs.set(Symbol::new(&env, "precious_metals"), metals_config);
-        verification_configs.set(Symbol::new(&env, "art_collectibles"), art_config);
-        verification_configs.set(Symbol::new(&env, "commodities"), commodities_config);
-        verification_configs.set(Symbol::new(&env, "invoice"), invoice_config);
-
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "verification_configs"), &verification_configs);
+        }
     }
 
     pub fn resolve_dispute(
@@ -493,13 +494,7 @@ impl CustodyValidator {
         resolution: Symbol,
         penalty_amount: i128,
     ) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut disputes: Map<u64, DisputeRecord> = env
             .storage()
@@ -967,13 +962,7 @@ impl CustodyValidator {
         claim_reason: Symbol,
         evidence_hash: BytesN<32>,
     ) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let insurance_integrations: Map<Address, InsuranceIntegration> = env
             .storage()
@@ -1008,13 +997,7 @@ impl CustodyValidator {
         asset_id: Address,
         insurance: InsuranceIntegration,
     ) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut insurance_integrations: Map<Address, InsuranceIntegration> = env
             .storage()
@@ -1081,13 +1064,7 @@ impl CustodyValidator {
     }
 
     pub fn update_oracle_status(env: Env, auth: Address, oracle_address: Address, is_active: bool) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut oracles: Map<Address, OracleInfo> = env
             .storage()
@@ -1110,13 +1087,7 @@ impl CustodyValidator {
         oracle_address: Address,
         reputation_score: u32,
     ) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         if reputation_score > 100 {
             panic!("Invalid reputation score");
@@ -1150,13 +1121,7 @@ impl CustodyValidator {
     }
 
     pub fn update_config(env: Env, auth: Address, config: ValidationConfig) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Validator not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         env.storage()
             .instance()

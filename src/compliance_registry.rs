@@ -2,8 +2,6 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, Address, Env, Map, Symbol, Vec,
 };
 
-use crate::auth::assert_admin;
-
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum ComplianceError {
@@ -67,18 +65,8 @@ impl ComplianceRegistry {
         kyc_required: bool,
         transfer_restrictions: bool,
     ) {
-        auth.require_auth();
-        if env
-            .storage()
-            .instance()
-            .has(&Symbol::new(&env, "initialized"))
-        {
-            panic!("Registry already initialized");
-        }
+        crate::shared_admin::write_admin(&env, &auth, &admin);
 
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "admin"), &admin);
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "kyc_required"), &kyc_required);
@@ -152,13 +140,7 @@ impl ComplianceRegistry {
     }
 
     pub fn update_kyc_status(env: Env, auth: Address, user: Address, kyc_status: KYCStatus) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         env.storage().instance().set(&user, &kyc_status);
 
@@ -181,13 +163,7 @@ impl ComplianceRegistry {
     }
 
     pub fn add_to_blacklist(env: Env, auth: Address, address: Address, reason: Symbol) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut blacklist: Vec<Address> = env
             .storage()
@@ -205,13 +181,7 @@ impl ComplianceRegistry {
     }
 
     pub fn remove_from_blacklist(env: Env, auth: Address, address: Address) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let blacklist: Vec<Address> = env
             .storage()
@@ -241,13 +211,7 @@ impl ComplianceRegistry {
     }
 
     pub fn add_to_whitelist(env: Env, auth: Address, address: Address) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut whitelist: Vec<Address> = env
             .storage()
@@ -267,13 +231,7 @@ impl ComplianceRegistry {
     }
 
     pub fn remove_from_whitelist(env: Env, auth: Address, address: Address) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let whitelist: Vec<Address> = env
             .storage()
@@ -528,13 +486,7 @@ impl ComplianceRegistry {
     }
 
     pub fn set_transfer_limits(env: Env, auth: Address, user: Address, limits: TransferLimits) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let map_key = Symbol::new(&env, "xfer_lim");
         let mut map: Map<Address, TransferLimits> = env
@@ -554,13 +506,7 @@ impl ComplianceRegistry {
     }
 
     pub fn update_compliance_rule(env: Env, auth: Address, rule: ComplianceRule) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Registry not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let rules: Vec<ComplianceRule> = env
             .storage()

@@ -2,7 +2,6 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, Address, Env, Map, Symbol, Vec, BytesN,
 };
 
-use crate::auth::assert_admin;
 use crate::rwa_token::RWATokenClient;
 use crate::RwaDeploySpec;
 
@@ -96,13 +95,8 @@ pub struct AssetFactory;
 #[contractimpl]
 impl AssetFactory {
     pub fn initialize(env: Env, auth: Address, admin: Address) {
-        auth.require_auth();
-        if env.storage().instance().has(&Symbol::new(&env, "admin")) {
-            panic!("Factory already initialized");
-        }
-        env.storage()
-            .instance()
-            .set(&Symbol::new(&env, "admin"), &admin);
+        crate::shared_admin::write_admin(&env, &auth, &admin);
+        
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "assets"), &Vec::<Address>::new(&env));
@@ -122,13 +116,7 @@ impl AssetFactory {
 
     /// Create a new RWA asset with deterministic address deployment
     pub fn create_asset(env: Env, auth: Address, config: AssetConfig) -> Address {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Factory not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         // Validate parameters
         if config.total_supply <= 0 || config.decimals > 18 {
@@ -234,13 +222,7 @@ impl AssetFactory {
             panic!("Invalid token parameters");
         }
 
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Factory not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let token_client = RWATokenClient::new(&env, &spec.token_contract);
         token_client.initialize(
@@ -313,13 +295,7 @@ impl AssetFactory {
     }
 
     pub fn set_asset_pause_status(env: Env, auth: Address, symbol: Symbol, paused: bool) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Factory not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let asset_key = Symbol::new(&env, &symbol.to_string());
         let mut asset_info: AssetInfo = env
@@ -333,13 +309,7 @@ impl AssetFactory {
     }
 
     pub fn update_admin(env: Env, auth: Address, new_admin: Address) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Factory not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         env.storage()
             .instance()
@@ -348,13 +318,7 @@ impl AssetFactory {
 
     /// Register a new template for an asset class
     pub fn register_template(env: Env, auth: Address, template: AssetTemplate) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Factory not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let mut templates: Map<AssetClass, AssetTemplate> = env
             .storage()
@@ -380,13 +344,7 @@ impl AssetFactory {
 
     /// Upgrade an asset with governance approval
     pub fn upgrade_asset(env: Env, auth: Address, symbol: Symbol, new_wasm_hash: BytesN<32>) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Factory not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let registry: Map<Symbol, AssetInfo> = env
             .storage()
@@ -431,13 +389,7 @@ impl AssetFactory {
 
     /// Emergency pause all assets
     pub fn emergency_pause_all(env: Env, auth: Address) {
-        let admin: Address = env
-            .storage()
-            .instance()
-            .get(&Symbol::new(&env, "admin"))
-            .unwrap_or_else(|| panic!("Factory not initialized"));
-
-        assert_admin(&auth, &admin);
+        crate::shared_admin::require_admin(&env, &auth);
 
         let registry: Map<Symbol, AssetInfo> = env
             .storage()
