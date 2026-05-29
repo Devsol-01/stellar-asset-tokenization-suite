@@ -227,7 +227,7 @@ impl RWAToken {
             panic_with_error!(&env, RWATokenError::InsufficientBalance);
         }
 
-        if !Self::check_outbound_compliance(env.clone(), from.clone(), amount) {
+        if !Self::check_transfer_compliance(env.clone(), from.clone(), from.clone(), amount) {
             panic_with_error!(&env, RWATokenError::ComplianceCheckFailed);
         }
 
@@ -260,6 +260,9 @@ impl RWAToken {
             panic_with_error!(&env, RWATokenError::InvalidAmount);
         }
 
+        // Require explicit authorisation from the sender
+        from.require_auth();
+
         Self::check_version(&env);
 
         let token_info: TokenInfo = env
@@ -279,7 +282,11 @@ impl RWAToken {
         let mut from_balance = Self::get_balance(env.clone(), from.clone());
         let mut to_balance = Self::get_balance(env.clone(), to.clone());
 
-        if from_balance.amount < amount {
+        // Only spendable (unlocked) tokens may be transferred
+        let spendable = from_balance.amount
+            .checked_sub(from_balance.locked_amount)
+            .unwrap_or(0);
+        if spendable < amount {
             panic_with_error!(&env, RWATokenError::InsufficientBalance);
         }
 
