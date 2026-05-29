@@ -17,10 +17,9 @@ import {
   ComplianceOptions, 
   TransactionOptions, 
   RWASDKConfig, 
-  RWASDKError, 
-  ErrorCode 
+  RWASDKError
 } from './types';
-import { RWASDKError as RWASDKErrorClass, contractErrorToCode } from './errors';
+import { RWASDKError as RWASDKErrorClass, contractErrorToCode, TimeoutError, InsufficientBalanceError, UnauthorizedError, ContractError } from './errors';
 
 /**
  * Client for interacting with the on-chain ComplianceRegistry contract.
@@ -93,7 +92,7 @@ export class ComplianceClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -142,7 +141,7 @@ export class ComplianceClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -207,7 +206,7 @@ export class ComplianceClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -247,7 +246,7 @@ export class ComplianceClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -290,7 +289,7 @@ export class ComplianceClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -330,7 +329,7 @@ export class ComplianceClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -434,7 +433,7 @@ export class ComplianceClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -493,7 +492,7 @@ export class ComplianceClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -608,7 +607,7 @@ export class ComplianceClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -660,19 +659,27 @@ export class ComplianceClient {
       return error;
     }
 
-    // Convert different error types to RWASDKError
-    if (error.message?.includes('timeout')) {
-      return new RWASDKErrorClass(ErrorCode.TIMEOUT, error.message);
+    const message = error.message || String(error);
+
+    if (message.includes('timeout')) {
+      return new TimeoutError(message);
     }
 
-    if (error.message?.includes('insufficient')) {
-      return new RWASDKErrorClass(ErrorCode.INSUFFICIENT_BALANCE, error.message);
+    if (message.includes('insufficient')) {
+      return new InsufficientBalanceError(message);
     }
 
-    if (error.message?.includes('unauthorized')) {
-      return new RWASDKErrorClass(ErrorCode.UNAUTHORIZED, error.message);
+    if (message.includes('unauthorized')) {
+      return new UnauthorizedError(message);
     }
 
-    return new RWASDKErrorClass(ErrorCode.COMPLIANCE_FAILED, error.message);
+    // Try to parse Soroban contract error numbers (e.g. "ContractError(301)")
+    const match = message.match(/ContractError\((\d+)\)/);
+    if (match) {
+      const code = contractErrorToCode(parseInt(match[1]));
+      return new RWASDKErrorClass(code, message);
+    }
+
+    return new ContractError(message);
   }
 }

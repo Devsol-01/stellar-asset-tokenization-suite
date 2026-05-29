@@ -17,10 +17,9 @@ import {
   TransferOptions, 
   TransactionOptions, 
   RWASDKConfig, 
-  RWASDKError, 
-  ErrorCode 
+  RWASDKError
 } from './types';
-import { RWASDKError as RWASDKErrorClass, contractErrorToCode } from './errors';
+import { RWASDKError as RWASDKErrorClass, contractErrorToCode, TimeoutError, InsufficientBalanceError, UnauthorizedError, TransactionError, ContractError } from './errors';
 
 /**
  * Client for interacting with a deployed RWA token contract.
@@ -133,7 +132,7 @@ export class TokenClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -180,7 +179,7 @@ export class TokenClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -225,7 +224,7 @@ export class TokenClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -276,7 +275,7 @@ export class TokenClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -321,7 +320,7 @@ export class TokenClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -359,7 +358,7 @@ export class TokenClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -394,7 +393,7 @@ export class TokenClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -432,7 +431,7 @@ export class TokenClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -467,7 +466,7 @@ export class TokenClient {
       const result = await this.server.sendTransaction(signedTx);
 
       if (result.status === 'ERROR') {
-        throw new RWASDKErrorClass(ErrorCode.TRANSACTION_FAILED, `Transaction failed: ${result.error}`);
+        throw new TransactionError(`Transaction failed: ${result.error}`);
       }
 
       return result.hash;
@@ -673,22 +672,7 @@ export class TokenClient {
       transaction.sign(keypair);
       return transaction;
     }
-    throw new RWASDKErrorClass(ErrorCode.UNAUTHORIZED, 'signTransaction requires a configured secretKey in the SDK config');
-    // This would parse the ScVal returned from the contract
-    // For now, return a placeholder implementation
-    throw new RWASDKErrorClass(ErrorCode.CONTRACT_ERROR, 'convertScValToAssetInfo not implemented');
-  }
-
-  private convertScValToBalance(scVal: xdr.ScVal): Balance {
-    // This would parse the ScVal returned from the contract
-    // For now, return a placeholder implementation
-    throw new RWASDKErrorClass(ErrorCode.CONTRACT_ERROR, 'convertScValToBalance not implemented');
-  }
-
-  private async signTransaction(transaction: any, signer: Address): Promise<any> {
-    // This would sign the transaction with the signer's key
-    // For now, return a placeholder implementation
-    throw new RWASDKErrorClass(ErrorCode.CONTRACT_ERROR, 'signTransaction not implemented');
+    throw new UnauthorizedError('signTransaction requires a configured secretKey in the SDK config');
   }
 
   private handleError(error: any): RWASDKErrorClass {
@@ -699,15 +683,15 @@ export class TokenClient {
     const message = error.message || String(error);
 
     if (message.includes('timeout')) {
-      return new RWASDKErrorClass(ErrorCode.TIMEOUT, message);
+      return new TimeoutError(message);
     }
 
     if (message.includes('insufficient')) {
-      return new RWASDKErrorClass(ErrorCode.INSUFFICIENT_BALANCE, message);
+      return new InsufficientBalanceError(message);
     }
 
     if (message.includes('unauthorized')) {
-      return new RWASDKErrorClass(ErrorCode.UNAUTHORIZED, message);
+      return new UnauthorizedError(message);
     }
 
     // Try to parse Soroban contract error numbers (e.g. "ContractError(201)")
@@ -717,6 +701,6 @@ export class TokenClient {
       return new RWASDKErrorClass(code, message);
     }
 
-    return new RWASDKErrorClass(ErrorCode.CONTRACT_ERROR, message);
+    return new ContractError(message);
   }
 }
