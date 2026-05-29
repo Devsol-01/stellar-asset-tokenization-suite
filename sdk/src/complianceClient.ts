@@ -6,8 +6,7 @@ import {
   Address,
   Contract,
   xdr,
-  ScInt,
-  ScSymbol
+  ScInt
 } from 'stellar-sdk';
 import { 
   KYCStatus, 
@@ -24,11 +23,29 @@ import {
 } from './types';
 import { RWASDKError as RWASDKErrorClass, contractErrorToCode } from './errors';
 
+/**
+ * Client for interacting with the on-chain ComplianceRegistry contract.
+ *
+ * Provides methods for managing KYC status, blacklists, whitelists, transfer
+ * limits, and compliance rules for RWA token holders.
+ *
+ * @example
+ * ```ts
+ * const compliance = new ComplianceClient(sdkConfig);
+ * await compliance.updateKYCStatus(admin, user, kycStatus);
+ * ```
+ */
 export class ComplianceClient {
   private server: Server;
   private contract: Contract;
   private config: RWASDKConfig;
 
+  /**
+   * Create a new ComplianceClient.
+   *
+   * @param config - SDK configuration. `config.contracts.complianceRegistry` must
+   *   be set to the deployed ComplianceRegistry contract address.
+   */
   constructor(config: RWASDKConfig) {
     this.config = config;
     this.server = new Server(config.stellar.serverUrl);
@@ -36,7 +53,17 @@ export class ComplianceClient {
   }
 
   /**
-   * Initialize the compliance registry
+   * Initialise the compliance registry contract.
+   *
+   * Must be called once after deployment before any other registry operations.
+   *
+   * @param deployer - Address that pays for and submits the transaction.
+   * @param admin - Address that will be set as the registry admin.
+   * @param kycRequired - Whether KYC verification is required for all transfers.
+   * @param transferRestrictions - Whether transfer restrictions are enabled globally.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `REGISTRY_ALREADY_INITIALIZED` if already initialised.
    */
   async initialize(
     deployer: Address,
@@ -77,7 +104,15 @@ export class ComplianceClient {
   }
 
   /**
-   * Add or update KYC status for a user
+   * Create or update the KYC status record for a user.
+   *
+   * @param admin - Admin address that authorises the update.
+   * @param user - Address of the user whose KYC record is being updated.
+   * @param kycStatus - New KYC status to store (verification level, jurisdiction,
+   *   accreditation, risk score, AML flags, etc.).
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the registry admin.
    */
   async updateKYCStatus(
     admin: Address,
@@ -118,7 +153,11 @@ export class ComplianceClient {
   }
 
   /**
-   * Get KYC status for a user
+   * Retrieve the KYC status record for a user.
+   *
+   * @param user - Address of the user to query.
+   * @returns The user's `KYCStatus` record.
+   * @throws {RWASDKError} With code `USER_NOT_FOUND` if the user has no KYC record.
    */
   async getKYCStatus(user: Address): Promise<KYCStatus> {
     try {
@@ -131,7 +170,16 @@ export class ComplianceClient {
   }
 
   /**
-   * Add address to blacklist
+   * Add an address to the compliance blacklist.
+   *
+   * Blacklisted addresses cannot send or receive tokens regardless of KYC status.
+   *
+   * @param admin - Admin address that authorises the operation.
+   * @param address - Address to blacklist.
+   * @param reason - Human-readable reason for blacklisting (stored on-chain as a Symbol).
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the registry admin.
    */
   async addToBlacklist(
     admin: Address,
@@ -145,7 +193,7 @@ export class ComplianceClient {
       const call = this.contract.call(
         'add_to_blacklist',
         new Address(address),
-        new ScSymbol(reason)
+        xdr.ScVal.scvSymbol(reason)
       );
 
       const transaction = new TransactionBuilder(account, {
@@ -170,7 +218,13 @@ export class ComplianceClient {
   }
 
   /**
-   * Remove address from blacklist
+   * Remove an address from the compliance blacklist.
+   *
+   * @param admin - Admin address that authorises the operation.
+   * @param address - Address to remove from the blacklist.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the registry admin.
    */
   async removeFromBlacklist(
     admin: Address,
@@ -204,7 +258,16 @@ export class ComplianceClient {
   }
 
   /**
-   * Add address to whitelist
+   * Add an address to the compliance whitelist.
+   *
+   * Whitelisted addresses may bypass certain compliance checks depending on
+   * the active compliance rules.
+   *
+   * @param admin - Admin address that authorises the operation.
+   * @param address - Address to whitelist.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the registry admin.
    */
   async addToWhitelist(
     admin: Address,
@@ -238,7 +301,13 @@ export class ComplianceClient {
   }
 
   /**
-   * Remove address from whitelist
+   * Remove an address from the compliance whitelist.
+   *
+   * @param admin - Admin address that authorises the operation.
+   * @param address - Address to remove from the whitelist.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the registry admin.
    */
   async removeFromWhitelist(
     admin: Address,
@@ -272,7 +341,16 @@ export class ComplianceClient {
   }
 
   /**
-   * Check if an address is compliant for transfers
+   * Check whether a transfer between two addresses is compliant.
+   *
+   * Evaluates KYC status, blacklist/whitelist membership, transfer limits, and
+   * any active compliance rules for both parties.
+   *
+   * @param from - Sender's Stellar address.
+   * @param to - Recipient's Stellar address.
+   * @param amount - Transfer amount as a raw integer string (no decimals).
+   * @returns `true` if the transfer is permitted, `false` otherwise.
+   * @throws {RWASDKError} If the contract call fails.
    */
   async checkCompliance(
     from: Address,
@@ -287,14 +365,19 @@ export class ComplianceClient {
         new ScInt(amount, xdr.ScValType.ScvI128)
       );
       
-      return result.result as boolean;
+      return typeof result.result === 'boolean' ? result.result : false;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Check transfer limits for a user
+   * Check whether a user is within their configured transfer limits for a given amount.
+   *
+   * @param user - Address of the user to check.
+   * @param amount - Proposed transfer amount as a raw integer string (no decimals).
+   * @returns `true` if the amount is within the user's remaining limits, `false` otherwise.
+   * @throws {RWASDKError} If the contract call fails.
    */
   async checkTransferLimits(
     user: Address,
@@ -307,14 +390,21 @@ export class ComplianceClient {
         new ScInt(amount, xdr.ScValType.ScvI128)
       );
       
-      return result.result as boolean;
+      return typeof result.result === 'boolean' ? result.result : false;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Set transfer limits for a user
+   * Set or update transfer limits for a specific user (admin only).
+   *
+   * @param admin - Admin address that authorises the update.
+   * @param user - Address of the user whose limits are being set.
+   * @param limits - New `TransferLimits` object (daily, monthly, and annual caps).
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the registry admin.
    */
   async setTransferLimits(
     admin: Address,
@@ -355,7 +445,10 @@ export class ComplianceClient {
   }
 
   /**
-   * Get all compliance rules
+   * Retrieve all active compliance rules from the registry.
+   *
+   * @returns An array of `ComplianceRule` objects currently stored on-chain.
+   * @throws {RWASDKError} If the contract call fails.
    */
   async getComplianceRules(): Promise<ComplianceRule[]> {
     try {
@@ -368,7 +461,14 @@ export class ComplianceClient {
   }
 
   /**
-   * Update compliance rule
+   * Create or update a compliance rule (admin only).
+   *
+   * @param admin - Admin address that authorises the update.
+   * @param rule - The `ComplianceRule` to create or update. The `ruleId` field
+   *   is used as the key; an existing rule with the same ID will be overwritten.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the registry admin.
    */
   async updateComplianceRule(
     admin: Address,
@@ -404,7 +504,14 @@ export class ComplianceClient {
   }
 
   /**
-   * Get compliance statistics
+   * Retrieve aggregate compliance statistics for the registry.
+   *
+   * Returns counts of verified users, blacklisted/whitelisted addresses, active
+   * rules, and an overall compliance rate. Currently returns placeholder values
+   * pending on-chain event indexing.
+   *
+   * @returns An object with `totalVerifiedUsers`, `totalBlacklisted`,
+   *   `totalWhitelisted`, `activeRules`, and `complianceRate` (0–100).
    */
   async getComplianceStats(): Promise<{
     totalVerifiedUsers: number;
@@ -429,7 +536,13 @@ export class ComplianceClient {
   }
 
   /**
-   * Get user's compliance history
+   * Retrieve paginated compliance event history for a user.
+   *
+   * @param user - Address of the user to query.
+   * @param limit - Maximum number of events to return (default `50`).
+   * @param cursor - Paging token from a previous response for cursor-based pagination.
+   * @returns An object with an `events` array, `hasMore` flag, and optional `nextCursor`.
+   * @throws {RWASDKError} With code `CONTRACT_ERROR` — not yet implemented.
    */
   async getUserComplianceHistory(
     user: Address,
@@ -454,7 +567,17 @@ export class ComplianceClient {
   }
 
   /**
-   * Batch update KYC status for multiple users
+   * Update KYC status for multiple users in a single transaction.
+   *
+   * Batches all `update_kyc_status` operations into one Stellar transaction,
+   * reducing the number of round-trips and total fees.
+   *
+   * @param admin - Admin address that authorises all updates.
+   * @param updates - Array of `{ user, kycStatus }` pairs to apply.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the registry admin.
+   * @throws {RWASDKError} With code `TRANSACTION_FAILED` if the transaction is rejected on-chain.
    */
   async batchUpdateKYCStatus(
     admin: Address,
@@ -603,24 +726,27 @@ export class ComplianceClient {
     throw new RWASDKErrorClass(ErrorCode.CONTRACT_ERROR, 'signTransaction not implemented');
   }
 
-  private handleError(error: any): RWASDKErrorClass {
+  private handleError(error: unknown): RWASDKErrorClass {
     if (error instanceof RWASDKErrorClass) {
       return error;
     }
 
-    // Convert different error types to RWASDKError
-    if (error.message?.includes('timeout')) {
-      return new RWASDKErrorClass(ErrorCode.TIMEOUT, error.message);
+    const message = (error && typeof error === 'object' && 'message' in error && typeof (error as Record<string, unknown>).message === 'string')
+      ? (error as Record<string, string>).message
+      : String(error);
+
+    if (message.includes('timeout')) {
+      return new RWASDKErrorClass(ErrorCode.TIMEOUT, message);
     }
 
-    if (error.message?.includes('insufficient')) {
-      return new RWASDKErrorClass(ErrorCode.INSUFFICIENT_BALANCE, error.message);
+    if (message.includes('insufficient')) {
+      return new RWASDKErrorClass(ErrorCode.INSUFFICIENT_BALANCE, message);
     }
 
-    if (error.message?.includes('unauthorized')) {
-      return new RWASDKErrorClass(ErrorCode.UNAUTHORIZED, error.message);
+    if (message.includes('unauthorized')) {
+      return new RWASDKErrorClass(ErrorCode.UNAUTHORIZED, message);
     }
 
-    return new RWASDKErrorClass(ErrorCode.COMPLIANCE_FAILED, error.message);
+    return new RWASDKErrorClass(ErrorCode.COMPLIANCE_FAILED, message);
   }
 }

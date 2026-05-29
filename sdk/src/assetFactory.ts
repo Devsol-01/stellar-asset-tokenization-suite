@@ -110,11 +110,34 @@ export interface DeploymentCost {
   estimated_time_seconds: number;
 }
 
+/**
+ * Client for interacting with the on-chain AssetFactory contract.
+ *
+ * Provides helpers for deploying asset-class-specific RWA tokens, estimating
+ * deployment costs, and querying the on-chain asset registry.
+ *
+ * @example
+ * ```ts
+ * const factory = new AssetFactory(
+ *   'https://horizon-testnet.stellar.org',
+ *   'CONTRACT_ID'
+ * );
+ * const result = await factory.deployRealEstateToken(signer, propertyDetails, config);
+ * ```
+ */
 export class AssetFactory {
   private server: Server;
   private contract: Contract;
   private networkPassphrase: string;
 
+  /**
+   * Create a new AssetFactory client.
+   *
+   * @param serverUrl - Soroban RPC / Horizon server URL.
+   * @param contractId - Stellar contract ID of the deployed AssetFactory contract.
+   * @param networkPassphrase - Network passphrase used to sign transactions.
+   *   Defaults to the Stellar testnet passphrase.
+   */
   constructor(
     serverUrl: string,
     contractId: string,
@@ -126,7 +149,18 @@ export class AssetFactory {
   }
 
   /**
-   * Deploy a Real Estate token with specialized configuration
+   * Deploy a Real Estate RWA token with property-specific metadata.
+   *
+   * Merges `propertyDetails` into the asset metadata and calls `create_asset`
+   * on the factory contract with `AssetClass.RealEstate`.
+   *
+   * @param signer - Keypair that authorises and signs the transaction.
+   * @param propertyDetails - Real-estate-specific configuration (location oracle,
+   *   rental yield, appraisal value, etc.).
+   * @param ownershipStructure - Base asset configuration (name, symbol, supply, etc.).
+   * @returns The deployed token contract address and the Stellar transaction ID.
+   * @throws {InvalidParametersError} If required fields in `ownershipStructure` are invalid.
+   * @throws {RWASDKError} If the transaction fails on-chain.
    */
   async deployRealEstateToken(
     signer: Keypair,
@@ -162,7 +196,18 @@ export class AssetFactory {
   }
 
   /**
-   * Deploy a Commodity token with specialized configuration
+   * Deploy a Commodity RWA token with vault and purity metadata.
+   *
+   * Validates the purity grade against the accepted set (`999`, `995`, `990`, `750`)
+   * before calling `create_asset` with `AssetClass.Commodity`.
+   *
+   * @param signer - Keypair that authorises and signs the transaction.
+   * @param commodityConfig - Commodity-specific configuration (vault location,
+   *   purity grade, physical redemption window, etc.).
+   * @param baseConfig - Base asset configuration (name, symbol, supply, etc.).
+   * @returns The deployed token contract address and the Stellar transaction ID.
+   * @throws {InvalidParametersError} If `purity_grade` is not one of the accepted values.
+   * @throws {RWASDKError} If the transaction fails on-chain.
    */
   async deployCommodityToken(
     signer: Keypair,
@@ -203,7 +248,19 @@ export class AssetFactory {
   }
 
   /**
-   * Deploy an Invoice token with specialized configuration
+   * Deploy an Invoice RWA token backed by a trade receivable.
+   *
+   * Validates that `due_date` is in the future and that `credit_rating` is one
+   * of the accepted values (`AAA`–`CCC`). Sets `total_supply` to the invoice
+   * face value before calling `create_asset` with `AssetClass.Invoice`.
+   *
+   * @param signer - Keypair that authorises and signs the transaction.
+   * @param invoiceData - Invoice-specific configuration (invoice number, debtor,
+   *   due date, credit rating, face amount, etc.).
+   * @param baseConfig - Base asset configuration (name, symbol, compliance rules, etc.).
+   * @returns The deployed token contract address and the Stellar transaction ID.
+   * @throws {InvalidParametersError} If `due_date` is in the past or `credit_rating` is invalid.
+   * @throws {RWASDKError} If the transaction fails on-chain.
    */
   async deployInvoiceToken(
     signer: Keypair,
@@ -252,7 +309,19 @@ export class AssetFactory {
   }
 
   /**
-   * Deploy a Security token with specialized configuration
+   * Deploy a Security (equity) RWA token with regulatory compliance metadata.
+   *
+   * Validates `regulationFramework` against accepted values (`REG_D`, `REG_S`,
+   * `RULE_144`, `REG_A+`) and enforces accredited-investor-only compliance rules.
+   * Holding period is set to 365 days for `RULE_144`, 90 days otherwise.
+   *
+   * @param signer - Keypair that authorises and signs the transaction.
+   * @param equityType - Type of equity (e.g. `"common"`, `"preferred"`).
+   * @param regulationFramework - Applicable securities regulation framework.
+   * @param baseConfig - Base asset configuration (name, symbol, supply, etc.).
+   * @returns The deployed token contract address and the Stellar transaction ID.
+   * @throws {InvalidParametersError} If `regulationFramework` is not one of the accepted values.
+   * @throws {RWASDKError} If the transaction fails on-chain.
    */
   async deploySecurityToken(
     signer: Keypair,
@@ -286,7 +355,7 @@ export class AssetFactory {
     const config: AssetConfig = {
       ...baseConfig,
       asset_class: AssetClass.Security,
-      compliance_rules,
+      compliance_rules: complianceRules,
       metadata
     };
 
@@ -300,22 +369,35 @@ export class AssetFactory {
   }
 
   /**
-   * Get standard configuration template for an asset class
+   * Return a pre-populated `AssetConfig` template for the given asset class.
+   *
+   * The template includes sensible defaults for compliance rules and dividend
+   * schedule. Callers should fill in `name`, `symbol`, and `total_supply`
+   * before passing the result to a deploy method.
+   *
+   * @param assetClass - The asset class to generate a template for.
+   * @returns A partially-populated `AssetConfig` with class-appropriate defaults.
    */
-  getAssetClassTemplate(assetClass: AssetClass): AssetConfig {
-    const baseTemplate: Omit<AssetConfig, 'name' | 'symbol' | 'total_supply'> = {
+  getAssetClassTemplate(assetClass: AssetClass): Omit<AssetConfig, 'name' | 'symbol' | 'total_supply'> {
+    return {
       decimals: 18,
       asset_class: assetClass,
       compliance_rules: this.getDefaultComplianceRules(assetClass),
       dividend_schedule: this.getDefaultDividendSchedule(assetClass),
       metadata: {}
     };
-
-    return baseTemplate as AssetConfig;
   }
 
   /**
-   * Estimate deployment costs for an asset class
+   * Estimate the on-chain deployment cost for a given asset class.
+   *
+   * Returns approximate gas cost (in XLM), storage footprint (in bytes), and
+   * expected confirmation time (in seconds). Values are based on empirical
+   * multipliers per asset class and should be treated as estimates only.
+   *
+   * @param assetClass - The asset class to estimate costs for.
+   * @returns An object containing `gas_cost_xlm`, `storage_cost_bytes`, and
+   *   `estimated_time_seconds`.
    */
   async estimateDeploymentCost(assetClass: AssetClass): Promise<DeploymentCost> {
     // Base costs in XLM
@@ -343,7 +425,15 @@ export class AssetFactory {
   }
 
   /**
-   * Get all deployed assets
+   * Fetch all assets currently registered in the on-chain registry.
+   *
+   * Reads the `registry` storage entry from the factory contract and maps
+   * each entry to a plain object. Returns an empty array if the registry is
+   * empty or the read fails.
+   *
+   * @returns An array of asset summary objects, each containing `symbol`,
+   *   `name`, `asset_class`, `total_supply`, `token_address`, `created_at`,
+   *   and `is_paused`.
    */
   async getAllAssets(): Promise<any[]> {
     try {
@@ -357,7 +447,8 @@ export class AssetFactory {
       }
 
       const registry = scValToNative(result.val);
-      return Object.values(registry).map((asset: any) => ({
+      if (!registry || typeof registry !== 'object') return [];
+      return Object.values(registry).map((asset: Record<string, any>) => ({
         symbol: asset.symbol,
         name: asset.name,
         asset_class: asset.asset_class,
@@ -373,7 +464,14 @@ export class AssetFactory {
   }
 
   /**
-   * Emergency pause all assets
+   * Trigger an emergency pause on all registered assets.
+   *
+   * Calls `emergency_pause_all` on the factory contract. Only the contract
+   * admin is authorised to invoke this operation.
+   *
+   * @param signer - Admin keypair that authorises and signs the transaction.
+   * @returns The Stellar transaction hash of the submitted transaction.
+   * @throws {RWASDKError} If the transaction fails or the signer is not the admin.
    */
   async emergencyPauseAll(signer: Keypair): Promise<string> {
     const account = await this.server.getAccount(signer.publicKey());
@@ -399,16 +497,21 @@ export class AssetFactory {
   ): Promise<any> {
     const account = await this.server.getAccount(signer.publicKey());
     
-    const configScVal = nativeToScVal(config, {
-      type: {
-        [AssetClass.RealEstate]: 'AssetConfig',
-        [AssetClass.Commodity]: 'AssetConfig',
-        [AssetClass.Invoice]: 'AssetConfig',
-        [AssetClass.Security]: 'AssetConfig',
-        [AssetClass.Art]: 'AssetConfig',
-        [AssetClass.CarbonCredit]: 'AssetConfig'
-      }[config.asset_class]
-    });
+    const typeMap: Record<AssetClass, string> = {
+      [AssetClass.RealEstate]: 'AssetConfig',
+      [AssetClass.Commodity]: 'AssetConfig',
+      [AssetClass.Invoice]: 'AssetConfig',
+      [AssetClass.Security]: 'AssetConfig',
+      [AssetClass.Art]: 'AssetConfig',
+      [AssetClass.CarbonCredit]: 'AssetConfig'
+    };
+
+    const assetType = typeMap[config.asset_class];
+    if (!assetType) {
+      throw new Error(`Unknown asset class: ${config.asset_class}`);
+    }
+
+    const configScVal = nativeToScVal(config, { type: assetType });
 
     return new TransactionBuilder(account, {
       fee: '100',

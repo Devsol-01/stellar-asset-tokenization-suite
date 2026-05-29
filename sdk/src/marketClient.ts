@@ -6,8 +6,7 @@ import {
   Address,
   Contract,
   xdr,
-  ScInt,
-  ScSymbol
+  ScInt
 } from 'stellar-sdk';
 import { 
   Order, 
@@ -23,11 +22,29 @@ import {
 } from './types';
 import { RWASDKError as RWASDKErrorClass, contractErrorToCode } from './errors';
 
+/**
+ * Client for interacting with the on-chain SecondaryMarket contract.
+ *
+ * Provides methods for placing and cancelling orders, triggering order
+ * matching, querying the order book, and managing market configuration.
+ *
+ * @example
+ * ```ts
+ * const market = new MarketClient(sdkConfig);
+ * const { orderId } = await market.createBuyOrder(trader, orderOptions);
+ * ```
+ */
 export class MarketClient {
   private server: Server;
   private contract: Contract;
   private config: RWASDKConfig;
 
+  /**
+   * Create a new MarketClient.
+   *
+   * @param config - SDK configuration. `config.contracts.secondaryMarket` must
+   *   be set to the deployed SecondaryMarket contract address.
+   */
   constructor(config: RWASDKConfig) {
     this.config = config;
     this.server = new Server(config.stellar.serverUrl);
@@ -35,7 +52,16 @@ export class MarketClient {
   }
 
   /**
-   * Create a buy order
+   * Place a buy (bid) limit order on the secondary market.
+   *
+   * @param trader - Address placing the order.
+   * @param options - Order parameters: token address, amount, price (in base
+   *   currency), optional expiry date, and optional metadata.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns An object with the Stellar `transactionHash` and the on-chain `orderId`.
+   * @throws {RWASDKError} With code `TRADING_PAUSED` if the market is paused.
+   * @throws {RWASDKError} With code `MIN_ORDER_SIZE_NOT_MET` if the amount is below the minimum.
+   * @throws {RWASDKError} With code `TRANSACTION_FAILED` if the transaction is rejected on-chain.
    */
   async createBuyOrder(
     trader: Address,
@@ -84,7 +110,16 @@ export class MarketClient {
   }
 
   /**
-   * Create a sell order
+   * Place a sell (ask) limit order on the secondary market.
+   *
+   * @param trader - Address placing the order. Must hold sufficient token balance.
+   * @param options - Order parameters: token address, amount, price (in base
+   *   currency), optional expiry date, and optional metadata.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns An object with the Stellar `transactionHash` and the on-chain `orderId`.
+   * @throws {RWASDKError} With code `INSUFFICIENT_BALANCE` if the trader lacks sufficient tokens.
+   * @throws {RWASDKError} With code `TRADING_PAUSED` if the market is paused.
+   * @throws {RWASDKError} With code `TRANSACTION_FAILED` if the transaction is rejected on-chain.
    */
   async createSellOrder(
     trader: Address,
@@ -133,7 +168,16 @@ export class MarketClient {
   }
 
   /**
-   * Cancel an order
+   * Cancel an existing open order.
+   *
+   * Only the original order maker can cancel their own order.
+   *
+   * @param trader - Address of the order maker.
+   * @param orderId - On-chain ID of the order to cancel.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `ORDER_NOT_FOUND` if the order does not exist.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `trader` is not the order maker.
    */
   async cancelOrder(
     trader: Address,
@@ -167,7 +211,17 @@ export class MarketClient {
   }
 
   /**
-   * Match orders for a token (can be called by anyone to trigger matching)
+   * Trigger the on-chain order matching engine for a token.
+   *
+   * Can be called by any address. The contract will attempt to match the best
+   * available buy and sell orders for the given token.
+   *
+   * @param caller - Address submitting the match request (pays the transaction fee).
+   * @param tokenAddress - On-chain address of the token whose orders should be matched.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `TRADING_PAUSED` if the market is paused.
+   * @throws {RWASDKError} With code `INSUFFICIENT_LIQUIDITY` if no matching orders exist.
    */
   async matchOrders(
     caller: Address,
@@ -201,7 +255,15 @@ export class MarketClient {
   }
 
   /**
-   * Get order book for a token
+   * Fetch the current order book for a token.
+   *
+   * Buy orders are sorted by price descending (best bid first); sell orders
+   * are sorted by price ascending (best ask first).
+   *
+   * @param tokenAddress - On-chain address of the token to query.
+   * @returns An `OrderBook` object with `buyOrders`, `sellOrders`, `lastPrice`,
+   *   `volume24h`, and `lastUpdated`.
+   * @throws {RWASDKError} If the contract call fails.
    */
   async getOrderBook(tokenAddress: Address): Promise<OrderBook> {
     try {
@@ -214,7 +276,11 @@ export class MarketClient {
   }
 
   /**
-   * Get order information
+   * Fetch details of a specific order by its on-chain ID.
+   *
+   * @param orderId - On-chain ID of the order to query.
+   * @returns An `Order` object with full order details.
+   * @throws {RWASDKError} With code `ORDER_NOT_FOUND` if the order does not exist.
    */
   async getOrder(orderId: number): Promise<Order> {
     try {
@@ -227,7 +293,11 @@ export class MarketClient {
   }
 
   /**
-   * Get user's orders
+   * Retrieve all open orders placed by a specific user.
+   *
+   * @param user - Address of the trader to query.
+   * @returns An array of `Order` objects for all open orders belonging to `user`.
+   * @throws {RWASDKError} If the contract call fails.
    */
   async getUserOrders(user: Address): Promise<Order[]> {
     try {
@@ -240,7 +310,12 @@ export class MarketClient {
   }
 
   /**
-   * Get recent trades
+   * Retrieve the most recent trades for a token.
+   *
+   * @param tokenAddress - On-chain address of the token to query.
+   * @param limit - Maximum number of trades to return (default `50`).
+   * @returns An array of `Trade` objects sorted by execution time descending.
+   * @throws {RWASDKError} If the contract call fails.
    */
   async getRecentTrades(
     tokenAddress: Address,
@@ -260,7 +335,13 @@ export class MarketClient {
   }
 
   /**
-   * Add supported token
+   * Register a token as tradeable on the secondary market (admin only).
+   *
+   * @param admin - Admin address that authorises the operation.
+   * @param tokenAddress - On-chain address of the token to add.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the market admin.
    */
   async addSupportedToken(
     admin: Address,
@@ -294,7 +375,16 @@ export class MarketClient {
   }
 
   /**
-   * Pause/unpause trading
+   * Pause or resume trading on the secondary market (admin only).
+   *
+   * When paused, all `createBuyOrder`, `createSellOrder`, and `matchOrders`
+   * calls will be rejected with `TRADING_PAUSED`.
+   *
+   * @param admin - Admin address that authorises the status change.
+   * @param paused - `true` to pause trading, `false` to resume.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the market admin.
    */
   async setPauseStatus(
     admin: Address,
@@ -328,7 +418,14 @@ export class MarketClient {
   }
 
   /**
-   * Update market configuration
+   * Update the market configuration (admin only).
+   *
+   * @param admin - Admin address that authorises the update.
+   * @param config - New `MarketConfig` to apply (fee rate, min/max order size,
+   *   max spread, supported tokens, base currency, etc.).
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the market admin.
    */
   async updateConfig(
     admin: Address,
@@ -364,7 +461,12 @@ export class MarketClient {
   }
 
   /**
-   * Get market statistics
+   * Retrieve aggregate market statistics, optionally scoped to a token.
+   *
+   * @param tokenAddress - Optional token address to scope the stats. If omitted,
+   *   returns platform-wide totals.
+   * @returns An object with `totalOrders`, `activeOrders`, `totalTrades`,
+   *   `volume24h`, `avgPrice`, and `spread`.
    */
   async getMarketStats(tokenAddress?: Address): Promise<{
     totalOrders: number;
@@ -391,7 +493,15 @@ export class MarketClient {
   }
 
   /**
-   * Get price history for a token
+   * Retrieve OHLCV (candlestick) price history for a token.
+   *
+   * @param tokenAddress - On-chain address of the token to query.
+   * @param interval - Candle interval: `'1m'`, `'5m'`, `'15m'`, `'1h'`, `'4h'`, or `'1d'`.
+   *   Defaults to `'1h'`.
+   * @param limit - Maximum number of candles to return (default `100`).
+   * @returns An array of OHLCV objects, each with `timestamp`, `open`, `high`,
+   *   `low`, `close`, and `volume`.
+   * @throws {RWASDKError} With code `CONTRACT_ERROR` — not yet implemented.
    */
   async getPriceHistory(
     tokenAddress: Address,
@@ -415,7 +525,12 @@ export class MarketClient {
   }
 
   /**
-   * Estimate trading fee
+   * Estimate the trading fee for a given order.
+   *
+   * @param orderType - `OrderType.BUY` or `OrderType.SELL`.
+   * @param amount - Order amount as a raw integer string (no decimals).
+   * @param price - Order price in base currency as a raw integer string.
+   * @returns An object with `baseFee`, `tradingFee`, `totalFee`, and `feeCurrency`.
    */
   async estimateTradingFee(
     orderType: OrderType,
@@ -442,7 +557,13 @@ export class MarketClient {
   }
 
   /**
-   * Get market depth (order book depth)
+   * Retrieve the top N price levels from the order book (market depth).
+   *
+   * @param tokenAddress - On-chain address of the token to query.
+   * @param depth - Number of price levels to return on each side (default `10`).
+   * @returns An object with `bids` and `asks` arrays, each entry containing
+   *   `price`, `amount`, and `total` (price × amount).
+   * @throws {RWASDKError} If the underlying `getOrderBook` call fails.
    */
   async getMarketDepth(
     tokenAddress: Address,
@@ -454,16 +575,20 @@ export class MarketClient {
     try {
       const orderBook = await this.getOrderBook(tokenAddress);
       
+      const toBigInt = (val: string): bigint => {
+        try { return BigInt(val); } catch { return 0n; }
+      };
+
       const bids = orderBook.buyOrders.slice(0, depth).map(order => ({
         price: order.price,
         amount: order.remainingAmount,
-        total: (BigInt(order.price) * BigInt(order.remainingAmount)).toString()
+        total: (toBigInt(order.price) * toBigInt(order.remainingAmount)).toString()
       }));
 
       const asks = orderBook.sellOrders.slice(0, depth).map(order => ({
         price: order.price,
         amount: order.remainingAmount,
-        total: (BigInt(order.price) * BigInt(order.remainingAmount)).toString()
+        total: (toBigInt(order.price) * toBigInt(order.remainingAmount)).toString()
       }));
 
       return { bids, asks };
@@ -475,10 +600,13 @@ export class MarketClient {
   // Private helper methods
 
   private convertMetadataToScMap(metadata: Record<string, string>): xdr.ScMap {
+    if (!metadata || typeof metadata !== 'object') {
+      return new xdr.ScMap({ map: [] });
+    }
     const map = new xdr.ScMap({
       map: Object.entries(metadata).map(([key, value]) => ({
-        key: xdr.ScVal.scvSymbol(new ScSymbol(key)),
-        val: xdr.ScVal.scvSymbol(new ScSymbol(value))
+        key: xdr.ScVal.scvSymbol(key),
+        val: xdr.ScVal.scvSymbol(value)
       }))
     });
     return map;
@@ -526,24 +654,27 @@ export class MarketClient {
     throw new RWASDKErrorClass(ErrorCode.CONTRACT_ERROR, 'signTransaction not implemented');
   }
 
-  private handleError(error: any): RWASDKErrorClass {
+  private handleError(error: unknown): RWASDKErrorClass {
     if (error instanceof RWASDKErrorClass) {
       return error;
     }
 
-    // Convert different error types to RWASDKError
-    if (error.message?.includes('timeout')) {
-      return new RWASDKErrorClass(ErrorCode.TIMEOUT, error.message);
+    const message = (error && typeof error === 'object' && 'message' in error && typeof (error as Record<string, unknown>).message === 'string')
+      ? (error as Record<string, string>).message
+      : String(error);
+
+    if (message.includes('timeout')) {
+      return new RWASDKErrorClass(ErrorCode.TIMEOUT, message);
     }
 
-    if (error.message?.includes('insufficient')) {
-      return new RWASDKErrorClass(ErrorCode.INSUFFICIENT_BALANCE, error.message);
+    if (message.includes('insufficient')) {
+      return new RWASDKErrorClass(ErrorCode.INSUFFICIENT_BALANCE, message);
     }
 
-    if (error.message?.includes('unauthorized')) {
-      return new RWASDKErrorClass(ErrorCode.UNAUTHORIZED, error.message);
+    if (message.includes('unauthorized')) {
+      return new RWASDKErrorClass(ErrorCode.UNAUTHORIZED, message);
     }
 
-    return new RWASDKErrorClass(ErrorCode.CONTRACT_ERROR, error.message);
+    return new RWASDKErrorClass(ErrorCode.CONTRACT_ERROR, message);
   }
 }

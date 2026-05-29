@@ -67,12 +67,33 @@ export interface MonitoringConfig {
     auto_renewal_enabled: boolean;
 }
 
+/**
+ * Automated monitoring service for custody attestations, custodian reputation,
+ * insurance status, and dispute activity.
+ *
+ * Runs a recurring monitoring cycle at the configured frequency and dispatches
+ * alerts via email, webhook, Slack, or Telegram when thresholds are breached.
+ *
+ * @example
+ * ```ts
+ * const monitor = new CustodyMonitoring(custodyClient, monitoringConfig);
+ * await monitor.startMonitoring();
+ * ```
+ */
 export class CustodyMonitoring {
     private custodyClient: CustodyClient;
     private config: MonitoringConfig;
     private monitoringInterval?: NodeJS.Timeout;
     private server: Server;
 
+    /**
+     * Create a new CustodyMonitoring instance.
+     *
+     * @param custodyClient - An initialised `CustodyClient` used to query on-chain state.
+     * @param config - Monitoring configuration including alert thresholds,
+     *   notification channels, and monitoring frequency.
+     * @param serverUrl - Horizon server URL. Defaults to the Stellar testnet.
+     */
     constructor(
         custodyClient: CustodyClient,
         config: MonitoringConfig,
@@ -83,6 +104,15 @@ export class CustodyMonitoring {
         this.server = new Server(serverUrl);
     }
 
+    /**
+     * Start the automated monitoring loop.
+     *
+     * Performs an immediate monitoring cycle, then schedules recurring cycles
+     * at the interval defined by `config.monitoring_frequency` (in minutes).
+     * Errors within a cycle are logged but do not stop the loop.
+     *
+     * @returns A promise that resolves once the first monitoring cycle completes.
+     */
     async startMonitoring(): Promise<void> {
         console.log('Starting custody monitoring...');
         
@@ -102,6 +132,11 @@ export class CustodyMonitoring {
         );
     }
 
+    /**
+     * Stop the automated monitoring loop and clean up the interval timer.
+     *
+     * @returns A promise that resolves once the loop has been stopped.
+     */
     async stopMonitoring(): Promise<void> {
         if (this.monitoringInterval) {
             clearInterval(this.monitoringInterval);
@@ -147,9 +182,14 @@ export class CustodyMonitoring {
             const contractAlerts = await this.custodyClient['getCustodyAlerts']();
             
             for (const [assetId, alertType] of contractAlerts) {
-                const alert: CustodyAlert = {
+                const validTypes = ['attestation_expired', 'attestation_expiring_soon', 'invalid_attestation', 'custodian_reputation_low', 'insurance_lapsed'] as const;
+            const safeAlertType: CustodyAlert['alert_type'] = validTypes.includes(alertType as any)
+              ? (alertType as CustodyAlert['alert_type'])
+              : 'invalid_attestation';
+
+            const alert: CustodyAlert = {
                     asset_id: assetId,
-                    alert_type: alertType as any,
+                    alert_type: safeAlertType,
                     severity: this.determineAlertSeverity(alertType),
                     message: this.generateAlertMessage(alertType, assetId),
                     timestamp: Date.now(),
@@ -339,6 +379,17 @@ export class CustodyMonitoring {
         console.log(`Would send ${alerts.length} Slack alerts`);
     }
 
+    /**
+     * Retrieve performance metrics for a specific custodian.
+     *
+     * Fetches the custodian's registry record and computes derived metrics
+     * such as dispute success rate and current status.
+     *
+     * @param custodianAddress - Stellar address of the custodian to query.
+     * @returns A `CustodianMetrics` object with reputation score, attestation
+     *   counts, dispute rates, and activity status.
+     * @throws {RWASDKError} If the underlying `getCustodianInfo` call fails.
+     */
     async getCustodianMetrics(custodianAddress: string): Promise<CustodianMetrics> {
         const custodian = await this.custodyClient.getCustodianInfo(custodianAddress);
         
@@ -360,6 +411,17 @@ export class CustodyMonitoring {
         };
     }
 
+    /**
+     * Track the depreciation of an asset's value over time.
+     *
+     * Returns historical appraisal data and the computed depreciation rate.
+     * The current implementation returns placeholder data; a production
+     * deployment should integrate with an external appraisal oracle.
+     *
+     * @param assetId - On-chain identifier of the asset to track.
+     * @returns An `AssetDepreciationData` object with initial value, current
+     *   value, depreciation rate, and appraisal history.
+     */
     async trackAssetDepreciation(assetId: string): Promise<AssetDepreciationData> {
         // This would track asset value over time
         // Placeholder implementation
@@ -373,6 +435,18 @@ export class CustodyMonitoring {
         };
     }
 
+    /**
+     * Check the insurance status for an asset.
+     *
+     * Queries the insurance provider integration for the given asset and
+     * returns the current policy details. The current implementation returns
+     * placeholder data; a production deployment should integrate with the
+     * actual insurance provider API.
+     *
+     * @param assetId - On-chain identifier of the asset to check.
+     * @returns An `InsuranceStatus` object with provider, policy number,
+     *   coverage amount, validity period, and auto-claim configuration.
+     */
     async verifyInsuranceStatus(assetId: string): Promise<InsuranceStatus> {
         // This would check insurance status from external providers
         // Placeholder implementation
@@ -389,6 +463,15 @@ export class CustodyMonitoring {
         };
     }
 
+    /**
+     * Update the monitoring configuration at runtime.
+     *
+     * If `monitoring_frequency` is changed while the monitor is running, the
+     * loop is automatically restarted with the new interval.
+     *
+     * @param newConfig - Partial `MonitoringConfig` with the fields to update.
+     *   Unspecified fields retain their current values.
+     */
     updateConfig(newConfig: Partial<MonitoringConfig>): void {
         this.config = { ...this.config, ...newConfig };
         
@@ -399,6 +482,12 @@ export class CustodyMonitoring {
         }
     }
 
+    /**
+     * Return the current monitoring status and configuration.
+     *
+     * @returns An object with `is_active` (whether the loop is running),
+     *   the current `config`, and `last_check` timestamp (Unix ms).
+     */
     getMonitoringStatus(): {
         is_active: boolean;
         config: MonitoringConfig;
