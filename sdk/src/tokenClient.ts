@@ -22,12 +22,31 @@ import {
 } from './types';
 import { RWASDKError as RWASDKErrorClass, contractErrorToCode } from './errors';
 
+/**
+ * Client for interacting with a deployed RWA token contract.
+ *
+ * Wraps the Soroban token contract interface and exposes typed methods for
+ * transfers, minting, burning, locking, pausing, and compliance checks.
+ *
+ * @example
+ * ```ts
+ * const client = new TokenClient(sdkConfig, tokenAddress);
+ * const info = await client.getTokenInfo();
+ * ```
+ */
 export class TokenClient {
   private server: Server;
   private contract: Contract;
   private config: RWASDKConfig;
   private tokenAddress: Address;
 
+  /**
+   * Create a new TokenClient.
+   *
+   * @param config - SDK configuration including Stellar network settings and
+   *   contract addresses.
+   * @param tokenAddress - On-chain address of the RWA token contract to interact with.
+   */
   constructor(config: RWASDKConfig, tokenAddress: Address) {
     this.config = config;
     this.server = new Server(config.stellar.serverUrl);
@@ -36,7 +55,11 @@ export class TokenClient {
   }
 
   /**
-   * Get token information
+   * Fetch on-chain metadata for this token.
+   *
+   * @returns An `AssetInfo` object containing name, symbol, decimals, total
+   *   supply, asset type, compliance registry address, and pause/freeze state.
+   * @throws {RWASDKError} If the contract call fails.
    */
   async getTokenInfo(): Promise<AssetInfo> {
     try {
@@ -49,7 +72,12 @@ export class TokenClient {
   }
 
   /**
-   * Get balance for an address
+   * Fetch the token balance for a given address.
+   *
+   * @param address - The Stellar address to query.
+   * @returns A `Balance` object containing the spendable amount, locked amount,
+   *   voting power, and the timestamp of the last dividend claim.
+   * @throws {RWASDKError} If the contract call fails.
    */
   async getBalance(address: Address): Promise<Balance> {
     try {
@@ -62,7 +90,20 @@ export class TokenClient {
   }
 
   /**
-   * Transfer tokens
+   * Transfer tokens between two addresses.
+   *
+   * Builds and submits a `transfer` contract invocation. The `from` address
+   * must have authorised the transaction (i.e. the SDK config must contain the
+   * corresponding secret key, or the transaction must be signed externally).
+   *
+   * @param from - Sender's Stellar address.
+   * @param to - Recipient's Stellar address.
+   * @param amount - Amount to transfer as a raw integer string (no decimals).
+   * @param options - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `TRANSFER_PAUSED` if transfers are paused.
+   * @throws {RWASDKError} With code `COMPLIANCE_FAILED` if the compliance registry rejects the transfer.
+   * @throws {RWASDKError} With code `TRANSACTION_FAILED` if the transaction is rejected on-chain.
    */
   async transfer(
     from: Address,
@@ -102,7 +143,15 @@ export class TokenClient {
   }
 
   /**
-   * Mint tokens (admin only)
+   * Mint new tokens and credit them to `to` (admin only).
+   *
+   * @param admin - Admin address that authorises the mint.
+   * @param to - Recipient address for the newly minted tokens.
+   * @param amount - Amount to mint as a raw integer string (no decimals).
+   * @param options - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the contract admin.
+   * @throws {RWASDKError} With code `TRANSACTION_FAILED` if the transaction is rejected on-chain.
    */
   async mint(
     admin: Address,
@@ -141,7 +190,14 @@ export class TokenClient {
   }
 
   /**
-   * Burn tokens
+   * Burn (destroy) tokens from the owner's balance.
+   *
+   * @param owner - Address whose tokens will be burned.
+   * @param amount - Amount to burn as a raw integer string (no decimals).
+   * @param options - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `INSUFFICIENT_BALANCE` if the owner has insufficient tokens.
+   * @throws {RWASDKError} With code `TRANSACTION_FAILED` if the transaction is rejected on-chain.
    */
   async burn(
     owner: Address,
@@ -179,7 +235,18 @@ export class TokenClient {
   }
 
   /**
-   * Lock tokens for voting or staking
+   * Lock a portion of the owner's tokens for voting or staking.
+   *
+   * Locked tokens are excluded from the spendable balance but still count
+   * toward voting power. They cannot be transferred until unlocked.
+   *
+   * @param owner - Address whose tokens will be locked.
+   * @param amount - Amount to lock as a raw integer string (no decimals).
+   * @param lockPeriod - Minimum lock duration in seconds.
+   * @param options - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `INSUFFICIENT_BALANCE` if the owner has insufficient unlocked tokens.
+   * @throws {RWASDKError} With code `TRANSACTION_FAILED` if the transaction is rejected on-chain.
    */
   async lockTokens(
     owner: Address,
@@ -219,7 +286,14 @@ export class TokenClient {
   }
 
   /**
-   * Unlock tokens
+   * Unlock previously locked tokens, returning them to the spendable balance.
+   *
+   * @param owner - Address whose tokens will be unlocked.
+   * @param amount - Amount to unlock as a raw integer string (no decimals).
+   * @param options - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `INSUFFICIENT_BALANCE` if the owner has insufficient locked tokens.
+   * @throws {RWASDKError} With code `TRANSACTION_FAILED` if the transaction is rejected on-chain.
    */
   async unlockTokens(
     owner: Address,
@@ -257,7 +331,15 @@ export class TokenClient {
   }
 
   /**
-   * Pause token transfers (admin only)
+   * Pause all token transfers (admin only).
+   *
+   * While paused, any `transfer` call will be rejected with `TRANSFER_PAUSED`.
+   * Use `unpause` to resume normal operation.
+   *
+   * @param admin - Admin address that authorises the pause.
+   * @param options - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the contract admin.
    */
   async pause(admin: Address, options: TransactionOptions = {}): Promise<string> {
     try {
@@ -287,7 +369,12 @@ export class TokenClient {
   }
 
   /**
-   * Unpause token transfers (admin only)
+   * Resume token transfers after a pause (admin only).
+   *
+   * @param admin - Admin address that authorises the unpause.
+   * @param options - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the contract admin.
    */
   async unpause(admin: Address, options: TransactionOptions = {}): Promise<string> {
     try {
@@ -317,7 +404,15 @@ export class TokenClient {
   }
 
   /**
-   * Freeze token (emergency regulatory compliance)
+   * Freeze the token for emergency regulatory compliance (admin only).
+   *
+   * A frozen token blocks all transfers regardless of pause state. Use
+   * `unfreeze` to lift the freeze.
+   *
+   * @param admin - Admin address that authorises the freeze.
+   * @param options - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the contract admin.
    */
   async freeze(admin: Address, options: TransactionOptions = {}): Promise<string> {
     try {
@@ -347,7 +442,12 @@ export class TokenClient {
   }
 
   /**
-   * Unfreeze token
+   * Lift a regulatory freeze on the token (admin only).
+   *
+   * @param admin - Admin address that authorises the unfreeze.
+   * @param options - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the contract admin.
    */
   async unfreeze(admin: Address, options: TransactionOptions = {}): Promise<string> {
     try {
@@ -377,7 +477,15 @@ export class TokenClient {
   }
 
   /**
-   * Get token statistics
+   * Retrieve aggregate statistics for this token.
+   *
+   * Returns total supply, circulating supply, holder count, total locked
+   * amount, and transfer count. Some fields (holders, locked, transfers)
+   * require on-chain event indexing and currently return `0` as placeholders.
+   *
+   * @returns An object with `totalSupply`, `circulatingSupply`, `totalHolders`,
+   *   `totalLocked`, and `transferCount`.
+   * @throws {RWASDKError} If the underlying `getTokenInfo` call fails.
    */
   async getTokenStats(): Promise<{
     totalSupply: string;
@@ -404,7 +512,17 @@ export class TokenClient {
   }
 
   /**
-   * Get transfer history for an address
+   * Retrieve paginated transfer history for an address.
+   *
+   * Queries Horizon payment records for the given address. Results are
+   * normalised into a common transfer shape. Pass `cursor` from a previous
+   * response to fetch the next page.
+   *
+   * @param address - The Stellar address to query history for.
+   * @param limit - Maximum number of records to return (default `50`).
+   * @param cursor - Paging token from a previous response for cursor-based pagination.
+   * @returns An object with `transfers` array, `hasMore` flag, and optional `nextCursor`.
+   * @throws {RWASDKError} If the Horizon query fails.
    */
   async getTransferHistory(
     address: Address,
@@ -450,7 +568,16 @@ export class TokenClient {
   }
 
   /**
-   * Estimate transfer fee
+   * Estimate the fee for a token transfer.
+   *
+   * Returns a breakdown of the base network fee and any compliance-layer fee.
+   * Currently the compliance fee is always `0`; this will be updated once the
+   * compliance registry exposes a fee-query endpoint.
+   *
+   * @param from - Sender's Stellar address.
+   * @param to - Recipient's Stellar address.
+   * @param amount - Transfer amount as a raw integer string (no decimals).
+   * @returns An object with `baseFee`, `complianceFee`, `totalFee`, and `feeCurrency`.
    */
   async estimateTransferFee(
     from: Address,
@@ -476,7 +603,17 @@ export class TokenClient {
   }
 
   /**
-   * Check if transfer is allowed
+   * Check whether a transfer between two addresses is permitted.
+   *
+   * Calls `check_transfer_compliance` on the token contract. If the contract
+   * call fails (e.g. compliance registry not configured), the method defaults
+   * to `{ allowed: true }` to avoid blocking transfers during development.
+   *
+   * @param from - Sender's Stellar address.
+   * @param to - Recipient's Stellar address.
+   * @param amount - Transfer amount as a raw integer string (no decimals).
+   * @returns An object with `allowed` boolean, an optional `reason` string when
+   *   `allowed` is `false`, and an optional `restrictions` array.
    */
   async checkTransferAllowed(
     from: Address,
