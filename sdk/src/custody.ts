@@ -125,11 +125,32 @@ export interface ProofData {
     };
 }
 
+/**
+ * Client for interacting with the on-chain CustodyValidator contract.
+ *
+ * Provides methods for registering custodians, submitting custody attestations,
+ * verifying asset backing, initiating disputes, and querying custody state.
+ *
+ * @example
+ * ```ts
+ * const custody = new CustodyClient(contractId, serverUrl);
+ * await custody.registerCustodian(signerKeypair, profile);
+ * await custody.submitAttestation(signerKeypair, assetId, proofData, signatures);
+ * ```
+ */
 export class CustodyClient {
     private server: Server;
     private contractId: string;
     private networkPassphrase: string;
 
+    /**
+     * Create a new CustodyClient.
+     *
+     * @param contractId - Stellar contract ID of the deployed CustodyValidator contract.
+     * @param serverUrl - Horizon server URL. Defaults to the Stellar testnet.
+     * @param networkPassphrase - Network passphrase used to sign transactions.
+     *   Defaults to `Networks.TESTNET`.
+     */
     constructor(
         contractId: string,
         serverUrl: string = 'https://horizon-testnet.stellar.org',
@@ -140,6 +161,20 @@ export class CustodyClient {
         this.networkPassphrase = networkPassphrase;
     }
 
+    /**
+     * Register a new custodian on-chain.
+     *
+     * Submits the custodian's profile (name, jurisdiction, license, verification
+     * types, bond requirement, and insurance provider) to the CustodyValidator
+     * contract.
+     *
+     * @param signerKeypair - Keypair of the custodian being registered. The
+     *   public key becomes the custodian's on-chain address.
+     * @param profile - Custodian profile data including credentials and
+     *   supported verification types.
+     * @returns The Horizon transaction submission response.
+     * @throws If the transaction fails or the custodian is already registered.
+     */
     async registerCustodian(
         signerKeypair: Keypair,
         profile: CustodianProfile
@@ -189,6 +224,23 @@ export class CustodyClient {
         return await this.server.submitTransaction(transaction);
     }
 
+    /**
+     * Submit a custody attestation for an asset.
+     *
+     * Builds a `CustodyAttestation` from the provided proof data, calculates
+     * the proof hash, determines the verification type, and submits the
+     * attestation to the contract. Multi-signature support is provided via
+     * the `signatures` parameter.
+     *
+     * @param signerKeypair - Keypair of the custodian submitting the attestation.
+     * @param assetId - On-chain identifier of the asset being attested.
+     * @param proofData - Structured proof data including documents, IoT readings,
+     *   satellite imagery, legal verification, and cryptographic proofs.
+     * @param signatures - Array of additional custodian signatures for multi-sig
+     *   attestations.
+     * @returns The Horizon transaction submission response.
+     * @throws {RWASDKError} With code `VERIFICATION_FAILED` if the proof is invalid.
+     */
     async submitAttestation(
         signerKeypair: Keypair,
         assetId: string,
@@ -233,6 +285,17 @@ export class CustodyClient {
         return await this.server.submitTransaction(transaction);
     }
 
+    /**
+     * Verify that an asset is currently backed by a valid custody attestation.
+     *
+     * Fetches the latest attestation for the token, checks its validity and
+     * expiry, and returns any active custody alerts.
+     *
+     * @param tokenAddress - On-chain address of the RWA token to verify.
+     * @returns An object with `is_valid` flag, the `latest_attestation` (if any),
+     *   an `alerts` array of active alert messages, and the `insurance_status`.
+     * @throws {RWASDKError} With code `CONTRACT_ERROR` if the verification query fails.
+     */
     async verifyAssetBacking(tokenAddress: string): Promise<{
         is_valid: boolean;
         latest_attestation?: CustodyAttestation;
@@ -262,6 +325,16 @@ export class CustodyClient {
         }
     }
 
+    /**
+     * Retrieve the full attestation history for an asset.
+     *
+     * Returns all attestations ever submitted for the given asset, sorted by
+     * timestamp ascending. Requires an on-chain indexer in production; the
+     * current implementation returns an empty array as a placeholder.
+     *
+     * @param assetId - On-chain identifier of the asset to query.
+     * @returns An array of `CustodyAttestation` objects.
+     */
     async getCustodyHistory(assetId: string): Promise<CustodyAttestation[]> {
         // This would typically query the contract for all attestations
         // For now, return a placeholder implementation
@@ -275,6 +348,21 @@ export class CustodyClient {
         return attestations;
     }
 
+    /**
+     * Initiate a dispute against a custody attestation.
+     *
+     * The challenger must post a bond (`bondAmount`) which is forfeited if the
+     * dispute is resolved in favour of the custodian.
+     *
+     * @param signerKeypair - Keypair of the challenger initiating the dispute.
+     * @param attestationId - On-chain ID of the attestation being disputed.
+     * @param reason - Human-readable reason for the dispute.
+     * @param bondAmount - Bond amount (in XLM) posted by the challenger.
+     * @param evidenceHash - Hash of the off-chain evidence supporting the dispute.
+     * @returns The Horizon transaction submission response.
+     * @throws {RWASDKError} With code `DISPUTE_ALREADY_EXISTS` if a dispute is already open.
+     * @throws {RWASDKError} With code `INSUFFICIENT_BOND` if the bond amount is too low.
+     */
     async initiateDispute(
         signerKeypair: Keypair,
         attestationId: number,
@@ -306,20 +394,49 @@ export class CustodyClient {
         return await this.server.submitTransaction(transaction);
     }
 
+    /**
+     * Fetch details of a specific dispute by its on-chain ID.
+     *
+     * @param disputeId - On-chain ID of the dispute to query.
+     * @returns A `DisputeRecord` object with full dispute details.
+     * @throws {RWASDKError} With code `CONTRACT_ERROR` — not yet implemented.
+     */
     async getDispute(disputeId: number): Promise<DisputeRecord> {
         // Query the contract for dispute details
         // This is a placeholder implementation
         throw new RWASDKError(ErrorCode.CONTRACT_ERROR, 'Not implemented'); // getDispute
     }
 
+    /**
+     * Fetch the registry record for a specific custodian.
+     *
+     * @param custodianAddress - Stellar address of the custodian to query.
+     * @returns A `CustodianRegistry` object with the custodian's on-chain profile.
+     * @throws {RWASDKError} With code `CONTRACT_ERROR` — not yet implemented.
+     */
     async getCustodianInfo(custodianAddress: string): Promise<CustodianRegistry> {
         throw new RWASDKError(ErrorCode.CONTRACT_ERROR, 'Not implemented'); // getCustodianInfo
     }
 
+    /**
+     * List all currently active custodians registered on-chain.
+     *
+     * @returns An array of `CustodianRegistry` objects for all active custodians.
+     * @throws {RWASDKError} With code `CONTRACT_ERROR` — not yet implemented.
+     */
     async listActiveCustodians(): Promise<CustodianRegistry[]> {
         throw new RWASDKError(ErrorCode.CONTRACT_ERROR, 'Not implemented'); // listActiveCustodians
     }
 
+    /**
+     * Fetch the verification configuration for a specific verification type.
+     *
+     * @param verificationType - Identifier of the verification type to query
+     *   (e.g. `'real_estate'`, `'precious_metals'`).
+     * @returns A `VerificationTypeConfig` object with required documents,
+     *   frequency, multi-sig requirements, and insurance thresholds.
+     * @throws {RWASDKError} With code `CONTRACT_ERROR` — not yet implemented.
+     */
     async getVerificationConfig(verificationType: string): Promise<VerificationTypeConfig> {
         throw new RWASDKError(ErrorCode.CONTRACT_ERROR, 'Not implemented'); // getVerificationConfig
     }

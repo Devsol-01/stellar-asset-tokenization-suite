@@ -22,11 +22,30 @@ import {
 } from './types';
 import { RWASDKError as RWASDKErrorClass, contractErrorToCode } from './errors';
 
+/**
+ * Client for interacting with the on-chain DividendDistributor contract.
+ *
+ * Provides methods for creating distributions, claiming dividends, querying
+ * distribution state, and managing distributor configuration.
+ *
+ * @example
+ * ```ts
+ * const dividends = new DividendClient(sdkConfig);
+ * const { distributionId } = await dividends.createDistribution(admin, options);
+ * await dividends.claimDividend(holder, distributionId);
+ * ```
+ */
 export class DividendClient {
   private server: Server;
   private contract: Contract;
   private config: RWASDKConfig;
 
+  /**
+   * Create a new DividendClient.
+   *
+   * @param config - SDK configuration. `config.contracts.dividendDistributor` must
+   *   be set to the deployed DividendDistributor contract address.
+   */
   constructor(config: RWASDKConfig) {
     this.config = config;
     this.server = new Server(config.stellar.serverUrl);
@@ -34,7 +53,21 @@ export class DividendClient {
   }
 
   /**
-   * Create a new dividend distribution
+   * Create a new dividend distribution for a token.
+   *
+   * Deposits `options.amount` of `options.currency` into the distributor
+   * contract and records a new distribution that token holders can claim
+   * before `options.claimDeadline`.
+   *
+   * @param admin - Admin address that authorises and funds the distribution.
+   * @param options - Distribution parameters: token address, currency, total
+   *   amount, claim deadline, and optional metadata.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns An object with the Stellar `transactionHash` and the on-chain
+   *   `distributionId` assigned to the new distribution.
+   * @throws {RWASDKError} With code `INSUFFICIENT_FUNDS` if the admin lacks sufficient balance.
+   * @throws {RWASDKError} With code `UNSUPPORTED_CURRENCY` if the currency is not configured.
+   * @throws {RWASDKError} With code `TRANSACTION_FAILED` if the transaction is rejected on-chain.
    */
   async createDistribution(
     admin: Address,
@@ -84,7 +117,18 @@ export class DividendClient {
   }
 
   /**
-   * Claim dividend for a specific distribution
+   * Claim the dividend owed to `claimer` from a specific distribution.
+   *
+   * The claimable amount is proportional to the claimer's token balance at
+   * the time the distribution was created.
+   *
+   * @param claimer - Address claiming the dividend.
+   * @param distributionId - On-chain ID of the distribution to claim from.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns An object with the Stellar `transactionHash` and the `amountClaimed`.
+   * @throws {RWASDKError} With code `ALREADY_CLAIMED` if the claimer has already claimed.
+   * @throws {RWASDKError} With code `DISTRIBUTION_NOT_ACTIVE` if the distribution is inactive.
+   * @throws {RWASDKError} With code `NO_TOKENS_TO_CLAIM` if the claimer held no tokens.
    */
   async claimDividend(
     claimer: Address,
@@ -128,7 +172,16 @@ export class DividendClient {
   }
 
   /**
-   * Claim all available dividends for a user
+   * Claim all available dividends across every active distribution for `claimer`.
+   *
+   * Iterates all active distributions and claims any unclaimed amounts in a
+   * single transaction.
+   *
+   * @param claimer - Address claiming dividends.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns An object with the Stellar `transactionHash` and an array of
+   *   `claimedAmounts` (one entry per distribution claimed).
+   * @throws {RWASDKError} With code `NO_DIVIDEND_AVAILABLE` if there is nothing to claim.
    */
   async claimAllDividends(
     claimer: Address,
@@ -167,7 +220,11 @@ export class DividendClient {
   }
 
   /**
-   * Get distribution information
+   * Fetch details of a specific distribution by its on-chain ID.
+   *
+   * @param distributionId - On-chain ID of the distribution to query.
+   * @returns A `DividendDistribution` object with full distribution details.
+   * @throws {RWASDKError} With code `DISTRIBUTION_NOT_FOUND` if the ID does not exist.
    */
   async getDistribution(distributionId: number): Promise<DividendDistribution> {
     try {
@@ -180,7 +237,11 @@ export class DividendClient {
   }
 
   /**
-   * Get all active distributions for a token
+   * Retrieve all active distributions for a specific token.
+   *
+   * @param tokenAddress - On-chain address of the RWA token to query.
+   * @returns An array of active `DividendDistribution` objects.
+   * @throws {RWASDKError} If the contract call fails.
    */
   async getActiveDistributions(tokenAddress: Address): Promise<DividendDistribution[]> {
     try {
@@ -193,7 +254,13 @@ export class DividendClient {
   }
 
   /**
-   * Get claim information
+   * Retrieve the claim record for a specific claimer and distribution.
+   *
+   * @param distributionId - On-chain ID of the distribution.
+   * @param claimer - Address of the claimer to look up.
+   * @returns A `ClaimInfo` object if the claimer has already claimed, or `null`
+   *   if no claim has been made yet.
+   * @throws {RWASDKError} If the contract call fails.
    */
   async getClaimInfo(distributionId: number, claimer: Address): Promise<ClaimInfo | null> {
     try {
@@ -215,7 +282,13 @@ export class DividendClient {
   }
 
   /**
-   * Calculate available dividend amount for a user
+   * Calculate the dividend amount available for a claimer to claim.
+   *
+   * @param distributionId - On-chain ID of the distribution.
+   * @param claimer - Address of the potential claimer.
+   * @returns The claimable amount as a raw integer string (no decimals).
+   * @throws {RWASDKError} With code `DISTRIBUTION_NOT_FOUND` if the ID does not exist.
+   * @throws {RWASDKError} With code `ALREADY_CLAIMED` if the claimer has already claimed.
    */
   async calculateAvailableDividend(
     distributionId: number,
@@ -235,7 +308,14 @@ export class DividendClient {
   }
 
   /**
-   * Update configuration
+   * Update the distributor configuration (admin only).
+   *
+   * @param admin - Admin address that authorises the update.
+   * @param config - New `DividendConfig` to apply (supported currencies, auto-distribute
+   *   flag, minimum distribution amount, fee rate, etc.).
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the distributor admin.
    */
   async updateConfig(
     admin: Address,
@@ -271,7 +351,16 @@ export class DividendClient {
   }
 
   /**
-   * Deactivate a distribution
+   * Deactivate a distribution, preventing further claims (admin only).
+   *
+   * Any unclaimed amounts remain in the contract until manually withdrawn.
+   *
+   * @param admin - Admin address that authorises the deactivation.
+   * @param distributionId - On-chain ID of the distribution to deactivate.
+   * @param txOptions - Optional transaction overrides (fee, timeout, memo).
+   * @returns The Stellar transaction hash.
+   * @throws {RWASDKError} With code `DISTRIBUTION_NOT_FOUND` if the ID does not exist.
+   * @throws {RWASDKError} With code `UNAUTHORIZED` if `admin` is not the distributor admin.
    */
   async deactivateDistribution(
     admin: Address,
@@ -305,7 +394,12 @@ export class DividendClient {
   }
 
   /**
-   * Get dividend statistics
+   * Retrieve aggregate dividend statistics, optionally scoped to a token.
+   *
+   * @param tokenAddress - Optional token address to scope the stats. If omitted,
+   *   returns platform-wide totals.
+   * @returns An object with `totalDistributions`, `activeDistributions`,
+   *   `totalDistributed`, `totalClaimed`, and `pendingClaims`.
    */
   async getDividendStats(tokenAddress?: Address): Promise<{
     totalDistributions: number;
@@ -330,7 +424,13 @@ export class DividendClient {
   }
 
   /**
-   * Get user's dividend history
+   * Retrieve paginated dividend claim history for a user.
+   *
+   * @param user - Address of the user to query.
+   * @param limit - Maximum number of claim records to return (default `50`).
+   * @param cursor - Paging token from a previous response for cursor-based pagination.
+   * @returns An object with a `claims` array, `hasMore` flag, and optional `nextCursor`.
+   * @throws {RWASDKError} With code `CONTRACT_ERROR` — not yet implemented.
    */
   async getUserDividendHistory(
     user: Address,
@@ -351,7 +451,11 @@ export class DividendClient {
   }
 
   /**
-   * Estimate dividend claim fee
+   * Estimate the fee for claiming a dividend.
+   *
+   * @param distributionId - On-chain ID of the distribution.
+   * @param claimer - Address of the claimer.
+   * @returns An object with `baseFee`, `dividendFee`, `totalFee`, and `feeCurrency`.
    */
   async estimateClaimFee(
     distributionId: number,
