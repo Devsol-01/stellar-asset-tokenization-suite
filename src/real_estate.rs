@@ -1,5 +1,6 @@
-use soroban_sdk::{contracttype, Address, Env, Symbol};
+use soroban_sdk::{contracttype, Address, Env, Symbol, panic_with_error};
 use crate::asset_factory::AssetConfig;
+use crate::asset_class_handlers::AssetClassError;
 
 #[contracttype]
 #[derive(Clone)]
@@ -19,12 +20,12 @@ pub fn create_real_estate_config(
 ) -> AssetConfig {
     // Validate location oracle
     if real_estate_config.location_oracle == Address::from_contract_id(&[0u8; 32]) {
-        panic!("Invalid location oracle");
+        panic_with_error!(&env, AssetClassError::InvalidLocation);
     }
 
     // Validate rental yield rate (should be between 0 and 10000 basis points)
     if real_estate_config.rental_yield_rate < 0 || real_estate_config.rental_yield_rate > 10000 {
-        panic!("Invalid rental yield rate");
+        panic_with_error!(&env, AssetClassError::InvalidParameters);
     }
 
     // Add real estate specific metadata

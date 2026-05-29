@@ -1,5 +1,6 @@
-use soroban_sdk::{contracttype, Env, Map, Symbol, Vec};
+use soroban_sdk::{contracttype, Env, Map, Symbol, Vec, panic_with_error};
 use crate::asset_factory::AssetConfig;
+use crate::asset_class_handlers::AssetClassError;
 
 #[contracttype]
 #[derive(Clone)]
@@ -19,7 +20,7 @@ pub fn create_carbon_credit_config(
 ) -> AssetConfig {
     let current_year = (env.ledger().timestamp() / 31536000) + 1970; // Approximate current year
     if carbon_config.vintage_year < 1990 || carbon_config.vintage_year > current_year {
-        panic!("Invalid vintage year");
+        panic_with_error!(&env, AssetClassError::InvalidVintage);
     }
 
     let valid_standards = Vec::from_array(&env, [
@@ -30,7 +31,7 @@ pub fn create_carbon_credit_config(
     ]);
     
     if !valid_standards.contains(&carbon_config.verification_standard) {
-        panic!("Invalid verification standard");
+        panic_with_error!(&env, AssetClassError::InvalidVerificationStandard);
     }
 
     let mut metadata = base_config.metadata;
