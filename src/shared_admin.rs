@@ -15,5 +15,5 @@ pub fn require_admin(env: &Env, auth: &Address) {
         .instance()
         .get(&Symbol::new(env, "admin"))
         .unwrap_or_else(|| panic!("Not initialized"));
-    assert_admin(auth, &admin);
+    assert_admin(env, auth, &admin);
 }
