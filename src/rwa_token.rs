@@ -121,6 +121,11 @@ impl RWAToken {
         );
 
         Self::mint(env.clone(), auth.clone(), auth.clone(), total_supply);
+
+        env.events().publish(
+            (Symbol::new(&env, "token_initialized"), auth),
+            (name, symbol, total_supply, decimals, asset_type),
+        );
     }
 
     fn read_version(env: &Env) -> u32 {
@@ -431,6 +436,11 @@ impl RWAToken {
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "token_info"), &token_info);
+
+        env.events().publish(
+            (Symbol::new(&env, "token_paused"), auth),
+            Symbol::new(&env, "paused"),
+        );
     }
 
     pub fn unpause(env: Env, auth: Address) {
@@ -455,6 +465,11 @@ impl RWAToken {
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "token_info"), &token_info);
+
+        env.events().publish(
+            (Symbol::new(&env, "token_unpaused"), auth),
+            Symbol::new(&env, "unpaused"),
+        );
     }
 
     pub fn freeze(env: Env, auth: Address) {
@@ -479,6 +494,11 @@ impl RWAToken {
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "token_info"), &token_info);
+
+        env.events().publish(
+            (Symbol::new(&env, "token_frozen"), auth),
+            Symbol::new(&env, "frozen"),
+        );
     }
 
     pub fn unfreeze(env: Env, auth: Address) {
@@ -503,6 +523,11 @@ impl RWAToken {
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "token_info"), &token_info);
+
+        env.events().publish(
+            (Symbol::new(&env, "token_unfrozen"), auth),
+            Symbol::new(&env, "unfrozen"),
+        );
     }
 
     fn check_transfer_compliance(env: Env, from: Address, to: Address, amount: i128) -> bool {
